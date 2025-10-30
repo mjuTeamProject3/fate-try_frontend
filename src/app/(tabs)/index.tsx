@@ -3,13 +3,13 @@ import { ScrollView, Text, View, TouchableOpacity, Modal, Alert, Image } from 'r
 // 아이콘 사용을 위한 임포트 (expo-vector-icons)
 import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 // 스타일 임포트
-import styles from './HomeStyles';
+import styles from '@/styles/HomeStyles';
 // 네비게이션 임포트
 import { router, useFocusEffect } from 'expo-router';
 // AsyncStorage 임포트
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // 이미지 모달 컴포넌트
-import ImageModal from '../../components/ImageModal';
+import ImageModal from '@/components/ImageModal';
 
 // 랭킹 데이터 타입 정의
 interface RankingItem {

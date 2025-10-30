@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import styles from '../src/style/RandomVideoEndStyles';
+import styles from '@/styles/RandomVideoEndStyles';
 
 const RandomVideoEndScreen = () => {
     const handleReport = () => {

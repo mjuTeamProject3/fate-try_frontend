@@ -12,9 +12,9 @@ import {
 } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import styles from '../src/style/FriendsListStyles';
+import styles from '@/styles/FriendsListStyles';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ImageModal from '../components/ImageModal';
+import ImageModal from '@/components/ImageModal';
 
 // 친구 데이터 타입 정의
 interface Friend {

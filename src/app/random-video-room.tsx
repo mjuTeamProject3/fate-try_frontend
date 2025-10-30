@@ -3,8 +3,8 @@ import { View, Text, TouchableOpacity, Image, Modal, Alert } from 'react-native'
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import styles from '../src/style/RandomVideoRoomStyles';
-import ImageModal from '../components/ImageModal';
+import styles from '@/styles/RandomVideoRoomStyles';
+import ImageModal from '@/components/ImageModal';
 
 // 프로필 데이터 타입 정의
 interface ProfileData {

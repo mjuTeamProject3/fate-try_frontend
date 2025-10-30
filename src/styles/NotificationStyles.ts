@@ -284,12 +284,7 @@ const styles = StyleSheet.create({
         width: '100%',
         marginBottom: 20,
     },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 10,
-    },
+    // sectionTitle는 앞에서 정의됨 (중복 방지)
     aboutText: {
         fontSize: 14,
         color: '#666',

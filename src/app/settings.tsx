@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, SafeAreaView, Switch, ScrollView, Alert, 
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useI18n } from '../contexts/i18nContext';
+import { useI18n } from '@/contexts/i18nContext';
 
 export default function SettingsScreen() {
     const { t, language, setLanguage } = useI18n();

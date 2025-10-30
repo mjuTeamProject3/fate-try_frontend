@@ -5,8 +5,8 @@ import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import styles from '../src/style/ChatRoomStyles';
-import ImageModal from '../components/ImageModal';
+import styles from '@/styles/ChatRoomStyles';
+import ImageModal from '@/components/ImageModal';
 
 // 채팅 메시지 인터페이스
 interface Message {

@@ -2,27 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import styles from '../src/style/RandomVideoStyles';
+import styles from '@/styles/RandomChatStyles';
 
-const RandomVideoWaitingScreen = () => {
+// 랜덤 채팅 대기 화면 컴포넌트
+const RandomChatWaitingScreen = () => {
+    // 경과 시간 상태
     const [elapsedTime, setElapsedTime] = useState(0);
-    const [queueCount, setQueueCount] = useState(89);
-    const [isCameraOn, setIsCameraOn] = useState(true);
-    const [isMicrophoneOn, setIsMicrophoneOn] = useState(true);
+    // 대기 중인 사용자 수
+    const [queueCount, setQueueCount] = useState(142);
+    // 로딩 애니메이션을 위한 애니메이션 값
     const [rotationValue] = useState(new Animated.Value(0));
 
-    // 경과 시간 업데이트
+    // 경과 시간 업데이트 (1초마다)
     useEffect(() => {
         const timer = setInterval(() => {
             setElapsedTime(prev => prev + 1);
-            // 큐 카운트 랜덤하게 변경
+            // 큐 카운트를 랜덤하게 변경 (실제로는 서버에서 받아와야 함)
             setQueueCount(prev => Math.max(1, prev + Math.floor(Math.random() * 3) - 1));
         }, 1000);
 
         return () => clearInterval(timer);
     }, []);
 
-    // 로딩 애니메이션
+    // 로딩 애니메이션 (회전)
     useEffect(() => {
         const rotateAnimation = Animated.loop(
             Animated.timing(rotationValue, {
@@ -35,34 +37,41 @@ const RandomVideoWaitingScreen = () => {
 
         return () => rotateAnimation.stop();
     }, []);
-    
+
     // 회전 각도 설정
     const rotateInterpolate = rotationValue.interpolate({
         inputRange: [0, 1],
         outputRange: ['0deg', '360deg'],
     });
-    
-    // 매칭 시뮬레이션 (5-10초 후 매칭)
+
+    // 매칭 시뮬레이션 (3-8초 후 매칭)
     useEffect(() => {
         const matchTimer = setTimeout(() => {
-            router.push('/random-video-room');
-        }, Math.random() * 5000 + 5000); // 5-10초 랜덤
+            // 랜덤 상대방 정보 생성
+            const randomNames = ['별빛소녀', '햇살왕자', '달빛요정', '바람처럼', '구름위를'];
+            const randomName = randomNames[Math.floor(Math.random() * randomNames.length)];
+            
+            // 채팅방으로 이동하면서 상대방 정보 전달
+            router.push({
+                pathname: '/chat-room',
+                params: {
+                    name: randomName,
+                    avatar: randomName.substring(0, 2),
+                    isRandom: 'true' // 랜덤 채팅임을 표시
+                }
+            });
+        }, Math.random() * 5000 + 3000); // 3-8초 랜덤
 
         return () => clearTimeout(matchTimer);
     }, []);
 
+    // 취소 버튼 핸들러
     const handleCancel = () => {
         router.back();
     };
 
-    const toggleCamera = () => {
-        setIsCameraOn(prev => !prev);
-    };
 
-    const toggleMicrophone = () => {
-        setIsMicrophoneOn(prev => !prev);
-    };
-
+    // 시간 포맷 함수 (초를 "N초 경과" 또는 "N분 N초 경과" 형식으로 변환)
     const formatTime = (seconds: number) => {
         if (seconds < 60) {
             return `${seconds}초 경과`;
@@ -77,7 +86,7 @@ const RandomVideoWaitingScreen = () => {
             {/* 헤더 */}
             <View style={styles.header}>
                 <View style={styles.headerSpacer} />
-                <Text style={styles.headerTitle}>랜덤 영상</Text>
+                <Text style={styles.headerTitle}>랜덤 채팅</Text>
                 <View style={styles.headerSpacer} />
             </View>
 
@@ -92,14 +101,14 @@ const RandomVideoWaitingScreen = () => {
                         ]}
                     >
                         <View style={styles.innerCircle}>
-                            <Ionicons name="videocam" size={40} color="#fff" />
+                            <Ionicons name="chatbubble-ellipses" size={40} color="#fff" />
                         </View>
                     </Animated.View>
                 </View>
 
                 {/* 상태 메시지 */}
-                <Text style={styles.mainMessage}>영상 상대방을 찾고 있어요</Text>
-                <Text style={styles.subMessage}>카메라와 마이크를 준비해주세요</Text>
+                <Text style={styles.mainMessage}>채팅 상대방을 찾고 있어요</Text>
+                <Text style={styles.subMessage}>곧 멋진 인연을 만나실 거예요 ✨</Text>
                 
                 {/* 경과 시간 */}
                 <Text style={styles.elapsedTime}>{formatTime(elapsedTime)}</Text>
@@ -107,7 +116,7 @@ const RandomVideoWaitingScreen = () => {
                 {/* 큐 정보 */}
                 <View style={styles.queueInfo}>
                     <Ionicons name="people" size={20} color="#4CAF50" />
-                    <Text style={styles.queueText}>영상 대기 중: {queueCount}명</Text>
+                    <Text style={styles.queueText}>채팅 대기 중: {queueCount}명</Text>
                 </View>
 
                 {/* 진행률 바 */}
@@ -122,42 +131,23 @@ const RandomVideoWaitingScreen = () => {
                     </View>
                 </View>
 
-                {/* 마이크/카메라 컨트롤 */}
-                <View style={styles.controlsContainer}>
+                {/* 버튼들 */}
+                <View style={{ alignItems: 'center', width: '100%', paddingHorizontal: 20 }}>
+                    {/* 취소 버튼 */}
                     <TouchableOpacity 
-                        style={[styles.controlButton, !isMicrophoneOn && styles.controlButtonOff]}
-                        onPress={toggleMicrophone}
+                        style={styles.cancelButton}
+                        onPress={handleCancel}
                     >
-                        <Ionicons 
-                            name={isMicrophoneOn ? "mic" : "mic-off"} 
-                            size={24} 
-                            color={isMicrophoneOn ? "#4CAF50" : "#999"} 
-                        />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                        style={[styles.controlButton, !isCameraOn && styles.controlButtonOff]}
-                        onPress={toggleCamera}
-                    >
-                        <Ionicons 
-                            name={isCameraOn ? "videocam" : "videocam-off"} 
-                            size={24} 
-                            color={isCameraOn ? "#4CAF50" : "#999"} 
-                        />
+                        <Ionicons name="close" size={20} color="#fff" />
+                        <Text style={styles.cancelButtonText}>검색 취소</Text>
                     </TouchableOpacity>
                 </View>
-
-                {/* 취소 버튼 */}
-                <TouchableOpacity 
-                    style={styles.cancelButton}
-                    onPress={handleCancel}
-                >
-                    <Ionicons name="close" size={20} color="#fff" />
-                    <Text style={styles.cancelButtonText}>검색 취소</Text>
-                </TouchableOpacity>
             </View>
         </SafeAreaView>
     );
 };
 
-export default RandomVideoWaitingScreen;
+export default RandomChatWaitingScreen;
+
+
+

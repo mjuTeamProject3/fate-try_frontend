@@ -3,8 +3,8 @@ import { ScrollView, StyleSheet, Text, View, TouchableOpacity, TextInput, Alert 
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import styles from '../src/style/ChatStyles';
-import ImageModal from '../components/ImageModal';
+import styles from '@/styles/ChatStyles';
+import ImageModal from '@/components/ImageModal';
 
 export default function ChatScreen() {
     // 읽은 채팅방 ID 목록 상태

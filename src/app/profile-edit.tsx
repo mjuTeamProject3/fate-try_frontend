@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, SafeAreaView, TextInput, ScrollView, Imag
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import ImageModal from '../components/ImageModal';
+import ImageModal from '@/components/ImageModal';
 
 export default function ProfileEditScreen() {
     const [name, setName] = useState('홍길동');

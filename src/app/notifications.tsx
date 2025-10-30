@@ -3,7 +3,7 @@ import { ScrollView, Text, View, TouchableOpacity, SafeAreaView, Modal, Image } 
 import { AntDesign, Ionicons, Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import styles from '../src/style/NotificationStyles';
+import styles from '@/styles/NotificationStyles';
 
 // 알림 데이터 타입 정의
 interface NotificationItem {

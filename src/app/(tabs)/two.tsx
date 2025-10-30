@@ -2,11 +2,11 @@ import React from 'react';
 import { ScrollView, Text, View, TouchableOpacity } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 // 스타일 임포트
-import styles from '../../src/style/Profile';
+import styles from '@/styles/Profile';
 // 네비게이션 임포트
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ImageModal from '../../components/ImageModal';
+import ImageModal from '@/components/ImageModal';
 
 export default function ProfileScreen() {
     // 친구 목록 데이터 (저장된 값 기반)
