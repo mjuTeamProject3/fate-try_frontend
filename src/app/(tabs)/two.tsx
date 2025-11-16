@@ -110,9 +110,8 @@ export default function ProfileScreen() {
                                 </View>
                             </View>
                         </View>
-                        <TouchableOpacity style={styles.editButton} onPress={() => router.push('/profile-edit')}>
-                            <Ionicons name="pencil" size={20} color="#4CAF50" />
-                            <Text style={styles.editButtonText}>편집</Text>
+                        <TouchableOpacity onPress={() => router.push('/profile-edit')}>
+                            <Ionicons name="create-outline" size={24} color="#333" />
                         </TouchableOpacity>
                     </View>
                     
@@ -485,14 +484,8 @@ export default function ProfileScreen() {
                             borderRadius: 12,
                             paddingVertical: 8,
                             paddingHorizontal: 4,
-                            shadowColor: '#000',
-                            shadowOffset: {
-                                width: 0,
-                                height: 2,
-                            },
-                            shadowOpacity: 0.25,
-                            shadowRadius: 3.84,
-                            elevation: 5,
+                            borderWidth: 1,
+                            borderColor: '#eee',
                             minWidth: 160,
                         }}
                         activeOpacity={1}

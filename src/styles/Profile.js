@@ -11,7 +11,7 @@ const getStatusBarHeight = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f9f9f9',
+        backgroundColor: '#fff',
         paddingTop: 0, // 상단 패딩 제거
     },
     scrollContent: {
@@ -45,11 +45,6 @@ const styles = StyleSheet.create({
         padding: 20,
         marginTop: 10, // 상단 마진 줄임
         marginBottom: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
     },
     profileLeft: {
         flexDirection: 'row',
@@ -141,11 +136,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 20,
         marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
     },
     friendsHeader: {
         flexDirection: 'row',

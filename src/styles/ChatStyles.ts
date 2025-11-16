@@ -11,7 +11,7 @@ const getStatusBarHeight = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f9f9f9',
+        backgroundColor: '#fff',
         paddingTop: 0,
     },
     
@@ -49,11 +49,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 15,
         paddingVertical: 12,
         borderRadius: 25,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
+        borderWidth: 1,
+        borderColor: '#eee',
     },
     searchInput: {
         flex: 1,
@@ -73,13 +70,8 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
         paddingVertical: 15,
         paddingHorizontal: 15,
-        marginBottom: 8,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
     },
     chatLeft: {
         marginRight: 15,

@@ -124,12 +124,12 @@ const HomeScreen = () => {
     //우리 지역 랭킹 프로필 이미지 URL
     const hankang = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNTA5MThfMTg0%2FMDAxNzU4MTcwMzA0MTU3.GXbLc0CJQrjuD-B1qctDtX-nArPIat2PRGyTBQ637qEg.vr_k_nYiLgcZyam9d95TqxqE_eu28lMh9O5X4HUO69Qg.JPEG%2F%25B4%25D9%25BF%25EE%25B7%25CE%25B5%25E5%25A3%25AD5.jpeg&type=sc960_832'
     const businessman = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyMzA0MTdfNzMg%2FMDAxNjgxNzI5NjQ3MTU4._rNBN9aW2S7gzXgf2K3JNxZZbNESHfIdBg5cVvSOILgg.PzlFD74YoCNgED2QhdArWuIHFapoHz-KMiumHApo5Y8g.JPEG.kuj3423%2FIMG_8757.jpg&type=sc960_832'
-    const hongpeople = 'https://scontent-ssn1-1.cdninstagram.com/v/t51.82787-15/568223023_18031780538733701_5521788549443438675_n.jpg?stp=dst-jpg_e35_p1080x1080_tt6&_nc_cat=110&ig_cache_key=Mzc0OTQzMDM2OTk1MTc5NzE1OQ%3D%3D.3-ccb1-7&ccb=1-7&_nc_sid=58cdad&efg=eyJ2ZW5jb2RlX3RhZyI6InhwaWRzLjE0NDB4MTg3Ny5zZHIuQzMifQ%3D%3D&_nc_ohc=pfwUqf0qTB8Q7kNvwEPX8Nr&_nc_oc=AdkvYrRfW1tcmzP8f-JUMVgfpUUbmYIAcrZczXBv1r7KjTEiurEHmAXK4hPaUVTyfRU&_nc_ad=z-m&_nc_cid=0&_nc_zt=23&_nc_ht=scontent-ssn1-1.cdninstagram.com&_nc_gid=UrFwVhE0N93uHOXJEisYPA&oh=00_AfcdjFzXKto28OP2wCU45uxbDbq82lLHGMSQhSF06AajsQ&oe=6907F148'
+    const hongpeople = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDAzMjdfMTcw%2FMDAxNzExNTA5MzAwNzMw.EhHzkZLKfQ8R8TPxApc2z8BfdorftRkqkTzB1bfmLocg.PhG6j9wX0pRdCKUEkMxykDWqNBOB2JC7XjPDBMX0hbwg.PNG%2F%25B0%25FC%25B1%25A4%25B0%25FA%25B6%25B0%25B3%25AA%25BF%25EB.png&type=sc960_832'
     const seoulseoul = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDA5MTJfMTI4%2FMDAxNzI2MTIxODIwNTQ0.8Aaxt2H_uaSFDHgNnrnIkZN9Zoi72rsoVcqMBkNrLxwg.yLmfkwykRwCLuvC5aohxhtxHuxdCLBFVR1sA3SHf328g.JPEG%2F20220515_183434.jpg&type=sc960_832'
     const sinchon = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fcafefiles.naver.net%2FMjAxOTA5MDVfMjE5%2FMDAxNTY3NjgwMDc5Mzk1.0MHFWyM4gXp_QLmWU4Sz4u_6VueWXWujOH2NXP2vy70g.vM-11sAkx726DCR2CG4H0_z5364IQEsp4GNkCJpuAacg.JPEG%2F1%25C0%25CF%25C2%25F7-10.jpg&type=sc960_832'
     //우리 지역 랭킹 데이터를 위한 더미 배열
     const localRankingData = [
-        { id: 1, title: '홍대피플', score: 2650, icon: 'person' , image: hongpeople },
+        { id: 1, title: '조아용', score: 2650, icon: 'person' , image: hongpeople },
         { id: 2, title: '한강뷰', score: 3420, icon: 'person', image: hankang },
         { id: 3, title: '비즈니스맨', score: 2890, icon: 'person' , image: businessman },
         { id: 4, title: '서울숲', score: 2420, icon: 'person' , image: seoulseoul },
@@ -307,7 +307,7 @@ const HomeScreen = () => {
                 )}
                 
                 {/* 2. 전체 하트 랭킹 섹션 */}
-                <View style={styles.rankingSection}>
+                <View style={[styles.rankingSection, { borderTopWidth: 1, borderTopColor: '#eee' }]}>
                     <View style={styles.rankingHeader}>
                         <Ionicons name="trophy-outline" size={20} color="#333" />
                         <Text style={styles.rankingHeaderText}>전체 하트 랭킹</Text>
@@ -337,7 +337,7 @@ const HomeScreen = () => {
                 </View>
 
                 {/* 4. 우리 지역 랭킹 섹션 */}
-                <View style={[styles.rankingSection, { marginBottom: 30 }]}> 
+                <View style={styles.rankingSection}> 
                     <View style={styles.rankingHeader}>
                         <Ionicons name="location-outline" size={20} color="#333" />
                         <Text style={styles.rankingHeaderText}>우리 지역 랭킹</Text>

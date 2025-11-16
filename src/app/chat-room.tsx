@@ -328,20 +328,7 @@ export default function ChatRoomScreen() {
                     onPress={handleExitChat}
                     style={styles.backButton}
                 >
-                    {isRandom ? (
-                        <View style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            backgroundColor: '#E53935',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                        }}>
-                            <Ionicons name="close" size={20} color="#fff" />
-                        </View>
-                    ) : (
-                        <Ionicons name="arrow-back" size={24} color="#333" />
-                    )}
+                    <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
@@ -357,17 +344,9 @@ export default function ChatRoomScreen() {
                 <View style={styles.headerRight}>
                     {isRandom && (
                         <TouchableOpacity 
-                            style={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: 20,
-                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                            }}
                             onPress={() => router.push('/report')}
                         >
-                            <Ionicons name="flag" size={20} color="#FF9800" />
+                            <Ionicons name="flag-outline" size={24} color="#333" />
                         </TouchableOpacity>
                     )}
                 </View>
