@@ -1,7 +1,7 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
@@ -17,7 +17,7 @@ export {
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
+  initialRouteName: 'login', // 초기 화면을 로그인으로 설정 (로그인 상태 확인 후 자동 리다이렉트)
 };
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -50,6 +50,56 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const systemScheme = useColorScheme();
   const [override, setOverride] = useState<'light' | 'dark' | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const router = useRouter();
+  const segments = useSegments();
+
+  // 로그인 상태 확인 함수
+  const checkLoginStatus = async () => {
+    try {
+      const loginStatus = await AsyncStorage.getItem('isLoggedIn');
+      const accessToken = await AsyncStorage.getItem('accessToken');
+      // 임시 토큰은 무시 (개발 중 임시 버튼으로 저장된 경우)
+      const loggedIn = loginStatus === 'true' && accessToken !== null && accessToken !== 'temp_token';
+      setIsLoggedIn(loggedIn);
+      return loggedIn;
+    } catch (error) {
+      console.error('로그인 상태 확인 오류:', error);
+      setIsLoggedIn(false);
+      return false;
+    }
+  };
+
+  // 초기 로그인 상태 확인 (리다이렉트 없이)
+  useEffect(() => {
+    (async () => {
+      await checkLoginStatus();
+      setIsInitialized(true);
+    })();
+  }, []);
+
+  // segments 변경 시 로그인 상태 다시 확인
+  useEffect(() => {
+    if (isInitialized) {
+      checkLoginStatus();
+    }
+  }, [segments]);
+
+  // 로그인 상태에 따라 라우팅 (초기 마운트 제외)
+  useEffect(() => {
+    if (!isInitialized || isLoggedIn === null) return; // 초기화 전이거나 로그인 상태 확인 중
+
+    const inAuthGroup = segments[0] === '(tabs)';
+    const isLoginScreen = segments[0] === 'login';
+
+    if (!isLoggedIn && inAuthGroup) {
+      // 로그인되지 않았는데 탭 화면에 있으면 로그인 화면으로 이동
+      router.replace('/login');
+    }
+    // 로그인되어 있어도 초기 마운트 시에는 로그인 화면에 머물도록 함
+    // 사용자가 직접 로그인하거나 임시 버튼을 눌러야만 홈으로 이동
+  }, [isLoggedIn, segments, isInitialized]);
 
   useEffect(() => {
     (async () => {
@@ -81,12 +131,18 @@ function RootLayoutNav() {
 
   const theme = (override ?? systemScheme) === 'dark' ? DarkTheme : DefaultTheme;
 
+  // 초기화 전에는 아무것도 렌더링하지 않음
+  if (!isInitialized) {
+    return null;
+  }
+
   return (
     <I18nProvider>
       <ThemeProvider value={theme}>
         {/* 전체 스택 네비게이터에서 기본 헤더를 숨겨서
             각 화면에서 커스텀 헤더를 직접 그릴 수 있도록 설정 */}
         <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="login" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>

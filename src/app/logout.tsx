@@ -2,16 +2,26 @@ import React from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LogoutScreen() {
     const confirmLogout = () => {
         Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
             { text: '취소', style: 'cancel' },
             {
-                text: '로그아웃', style: 'destructive', onPress: () => {
-                    // TODO: 실제 로그아웃 로직 연동 (토큰 제거 등)
-                    Alert.alert('완료', '로그아웃되었습니다.');
-                    router.replace('/(tabs)');
+                text: '로그아웃', style: 'destructive', onPress: async () => {
+                    try {
+                        // 로그인 정보 제거
+                        await AsyncStorage.removeItem('accessToken');
+                        await AsyncStorage.removeItem('refreshToken');
+                        await AsyncStorage.removeItem('loginProvider');
+                        await AsyncStorage.removeItem('isLoggedIn');
+                        Alert.alert('완료', '로그아웃되었습니다.');
+                        router.replace('/login');
+                    } catch (error) {
+                        console.error('로그아웃 오류:', error);
+                        Alert.alert('오류', '로그아웃 중 문제가 발생했습니다.');
+                    }
                 }
             }
         ]);
