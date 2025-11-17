@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, Modal, Alert, Keyboard } from 'react-native';
+import { View, Text, TouchableOpacity, TouchableWithoutFeedback, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, Modal, Alert, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -67,6 +67,8 @@ export default function ChatRoomScreen() {
     const [isHeartLiked, setIsHeartLiked] = useState(false);
     const [isFriendAdded, setIsFriendAdded] = useState(true); // 채팅방에서는 이미 친구이므로 true
     const [showImageExpandModal, setShowImageExpandModal] = useState(false);
+    const [selectedMessageImage, setSelectedMessageImage] = useState<string | null>(null);
+    const [isMessageImageModalVisible, setMessageImageModalVisible] = useState(false);
     
     // 대화주제 추천 모달 상태
     const [showTopicModal, setShowTopicModal] = useState(false);
@@ -432,11 +434,22 @@ export default function ChatRoomScreen() {
                             {/* 이미지가 있는 경우 */}
                             {message.image ? (
                                 <View>
-                                    <Image 
-                                        source={{ uri: message.image }}
-                                        style={styles.messageImage}
-                                        resizeMode="cover"
-                                    />
+                                    <TouchableOpacity
+                                        activeOpacity={0.9}
+                                        onPress={() => {
+                                            setSelectedMessageImage(message.image || null);
+                                            setMessageImageModalVisible(true);
+                                        }}
+                                        accessible
+                                        accessibilityRole="imagebutton"
+                                        accessibilityLabel="보낸 사진 크게 보기"
+                                    >
+                                        <Image 
+                                            source={{ uri: message.image }}
+                                            style={styles.messageImage}
+                                            resizeMode="cover"
+                                        />
+                                    </TouchableOpacity>
                                     {message.text && (
                                         <View 
                                             style={[
@@ -843,6 +856,39 @@ export default function ChatRoomScreen() {
                 imageUri={null}
                 userName={userName}
             />
+
+            {/* 채팅 이미지 전체 화면 뷰어 */}
+            <Modal
+                visible={isMessageImageModalVisible && !!selectedMessageImage}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setMessageImageModalVisible(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setMessageImageModalVisible(false)}>
+                    <View style={styles.messageImageModalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={styles.messageImageModalContent}>
+                                {selectedMessageImage && (
+                                    <Image
+                                        source={{ uri: selectedMessageImage }}
+                                        style={styles.fullScreenMessageImage}
+                                        resizeMode="contain"
+                                    />
+                                )}
+                                <TouchableOpacity
+                                    style={styles.messageImageModalClose}
+                                    onPress={() => setMessageImageModalVisible(false)}
+                                    accessible
+                                    accessibilityRole="button"
+                                    accessibilityLabel="이미지 닫기"
+                                >
+                                    <Ionicons name="close" size={28} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
 
 
             {/* 나가기 확인 모달 */}

@@ -1,4 +1,7 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Dimensions } from 'react-native';
+
+const windowWidth = Dimensions.get('window').width;
+const windowHeight = Dimensions.get('window').height;
 
 const styles = StyleSheet.create({
     // 전체 컨테이너
@@ -243,6 +246,30 @@ const styles = StyleSheet.create({
     },
     messageBubbleWithImage: {
         marginTop: 5,
+    },
+    messageImageModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+    },
+    messageImageModalContent: {
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+    },
+    fullScreenMessageImage: {
+        width: windowWidth - 60,
+        height: windowHeight * 0.6,
+        borderRadius: 16,
+    },
+    messageImageModalClose: {
+        position: 'absolute',
+        top: 20,
+        right: 10,
+        padding: 6,
     },
     
     // 사진 선택 모달
