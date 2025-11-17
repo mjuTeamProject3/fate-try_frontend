@@ -454,7 +454,12 @@ const HomeScreen = () => {
                             </TouchableOpacity>
                         </View>
                         
-                        <View style={styles.profileModalContent}>
+                        <View style={styles.profileModalBody}>
+                        <ScrollView 
+                            style={styles.profileModalScroll}
+                            contentContainerStyle={styles.profileModalContent}
+                            showsVerticalScrollIndicator={false}
+                        >
                             {/* 프로필 아바타 */}
                             <TouchableOpacity 
                                 style={styles.profileAvatar}
@@ -530,8 +535,9 @@ const HomeScreen = () => {
                                     })()}
                                 </View>
                             </View>
-                            
-                            {/* 좋아요 및 친구 관련 버튼 */}
+                        </ScrollView>
+                        </View>
+                        <View style={styles.profileModalFooter}>
                             <View style={styles.actionButtonsContainer}>
                                 <TouchableOpacity 
                                     style={styles.heartButton}
@@ -545,11 +551,9 @@ const HomeScreen = () => {
                                 </TouchableOpacity>
                                 
                                 {!isFriendAdded && !isFriendRequestSent ? (
-                                    // 친구 추가 버튼
                                     <TouchableOpacity 
                                         style={styles.addFriendButton}
                                         onPress={async () => {
-                                            // 친구 요청 저장
                                             const pendingRequests = await AsyncStorage.getItem('friend_requests');
                                             const requests = pendingRequests ? JSON.parse(pendingRequests) : [];
                                             const newRequest = {
@@ -568,7 +572,6 @@ const HomeScreen = () => {
                                         <Text style={styles.addFriendText}>친구 추가</Text>
                                     </TouchableOpacity>
                                 ) : !isFriendAdded && isFriendRequestSent ? (
-                                    // 친구 요청 전송됨 상태
                                     <TouchableOpacity 
                                         style={[styles.addFriendButton, { opacity: 0.6 }]}
                                         disabled={true}
@@ -577,12 +580,10 @@ const HomeScreen = () => {
                                         <Text style={styles.addFriendText}>친구 요청 전송됨</Text>
                                     </TouchableOpacity>
                                 ) : (
-                                    // 친구 추가된 상태 - 채팅과 친구 삭제 버튼
                                     <>
                                         <TouchableOpacity 
                                             style={styles.chatButton}
                                             onPress={() => {
-                                                // 채팅방으로 이동
                                                 setShowProfileModal(false);
                                                 router.push({
                                                     pathname: '/chat-room',
