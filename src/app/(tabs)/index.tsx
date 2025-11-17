@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, Modal, Alert, Image } from 'react-native';
 // 아이콘 사용을 위한 임포트 (expo-vector-icons)
 import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
@@ -98,7 +98,7 @@ const HomeScreen = () => {
 
 
     //전체 랭킹 데이터를 위한 더미 배열 (실제 데이터는 서버에서 받아와야 합니다)
-    const rankingData = [
+    const rankingData: RankingItem[] = [
         { id: 1, title: '카리나', score: 15420, icon: 'person', image: karinaImageUrl },
         { id: 2, title: '유나', score: 12890, icon: 'person', image: yunaImageUrl },
         { id: 3, title: '윈터', score: 11250, icon: 'person', image: winterImageUrl },
@@ -106,6 +106,14 @@ const HomeScreen = () => {
         { id: 5, title: '카즈하', score: 9200, icon: 'person' , image: kazuhaImageUrl },
         // 데이터가 더 많다면 이 배열에 계속 추가됩니다.
     ];
+    // 전체 랭킹: 좋아요(하트 수) 기준 내림차순으로 정렬된 배열 (useMemo로 불필요한 재계산 방지)
+    const sortedRankingData = useMemo(
+        () =>
+            [...rankingData].sort(
+                (a, b) => Number(b.score) - Number(a.score),
+            ),
+        [rankingData]
+    );
 
     //이달의 랭킹 프로필 이미지 URL (여기에 이미지 URL을 입력하세요)
     const chaewonImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyMzAyMDFfMjgg%2FMDAxNjc1MjU1OTI0NDU4.FGEfyFN91NCetcBca1GLfsCrbqJ-fT8ssFzEue2xLacg.5LmwExujHWFo3IckaDikm_Q1dmJ3Rn6_O-uK6TI35q4g.JPEG.jhs020329%2Fkchaewon.lesserafim%25A3%25AD07%25A3%25AD01%25A3%25AD2023%25A3%25AD0008.jpg&type=sc960_832'; // 여기에 실제 이미지 URL을 넣어주세요
@@ -114,7 +122,7 @@ const HomeScreen = () => {
     const yuyunImageUrl = 'https://search.pstatic.net/sunny/?src=http%3A%2F%2Ffile3.instiz.net%2Fdata%2Fcached_img%2Fupload%2F2022%2F02%2F04%2F15%2F4fbeedcee7f673e141dcdb3234fff3b6.jpg&type=a340'
     const natiImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDAxMTRfMTA4%2FMDAxNzA1MjI1NDE1NzYy.v5CQhWcExHieBvdB7k4G7BrTjaMrA_lmF7p9NS9gfjcg.brwb6KYmfkdrvKEWny-5aATE-uq2BZ8IPjMg8axk6esg.JPEG.idhair3377%2FKakaoTalk%25A3%25DF20240102%25A3%25DF202648326%25A3%25DF02.jpg&type=sc960_832'
     //이달의 랭킹 데이터를 위한 더미 배열
-    const monthlyRankingData = [
+    const monthlyRankingData: RankingItem[] = [
         { id: 1, title: '김채원', score: 8650, icon: 'person' , image: chaewonImageUrl },
         { id: 2, title: '이안', score: 7980, icon: 'person' , image: anImageUrl },
         { id: 3, title: '쥴리', score: 7320, icon: 'person' , image: julieImageUrl },
@@ -127,14 +135,31 @@ const HomeScreen = () => {
     const hongpeople = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDAzMjdfMTcw%2FMDAxNzExNTA5MzAwNzMw.EhHzkZLKfQ8R8TPxApc2z8BfdorftRkqkTzB1bfmLocg.PhG6j9wX0pRdCKUEkMxykDWqNBOB2JC7XjPDBMX0hbwg.PNG%2F%25B0%25FC%25B1%25A4%25B0%25FA%25B6%25B0%25B3%25AA%25BF%25EB.png&type=sc960_832'
     const seoulseoul = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDA5MTJfMTI4%2FMDAxNzI2MTIxODIwNTQ0.8Aaxt2H_uaSFDHgNnrnIkZN9Zoi72rsoVcqMBkNrLxwg.yLmfkwykRwCLuvC5aohxhtxHuxdCLBFVR1sA3SHf328g.JPEG%2F20220515_183434.jpg&type=sc960_832'
     const sinchon = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fcafefiles.naver.net%2FMjAxOTA5MDVfMjE5%2FMDAxNTY3NjgwMDc5Mzk1.0MHFWyM4gXp_QLmWU4Sz4u_6VueWXWujOH2NXP2vy70g.vM-11sAkx726DCR2CG4H0_z5364IQEsp4GNkCJpuAacg.JPEG%2F1%25C0%25CF%25C2%25F7-10.jpg&type=sc960_832'
+    // 이달의 랭킹: 좋아요(하트 수) 기준 내림차순으로 정렬된 배열
+    const sortedMonthlyRankingData = useMemo(
+        () =>
+            [...monthlyRankingData].sort(
+                (a, b) => Number(b.score) - Number(a.score),
+            ),
+        [monthlyRankingData]
+    );
+
     //우리 지역 랭킹 데이터를 위한 더미 배열
-    const localRankingData = [
+    const localRankingData: RankingItem[] = [
         { id: 1, title: '조아용', score: 2650, icon: 'person' , image: hongpeople },
         { id: 2, title: '한강뷰', score: 3420, icon: 'person', image: hankang },
         { id: 3, title: '비즈니스맨', score: 2890, icon: 'person' , image: businessman },
         { id: 4, title: '서울숲', score: 2420, icon: 'person' , image: seoulseoul },
         { id: 5, title: '신촌을 못가', score: 2300, icon: 'person' , image: sinchon },
     ];
+    // 우리 지역 랭킹: 좋아요(하트 수) 기준 내림차순으로 정렬된 배열
+    const sortedLocalRankingData = useMemo(
+        () =>
+            [...localRankingData].sort(
+                (a, b) => Number(b.score) - Number(a.score),
+            ),
+        [localRankingData]
+    );
 
     // 사주 키워드 데이터 (프로필별로 고정)
     const getProfileKeywords = (profileTitle: string) => {
@@ -313,7 +338,7 @@ const HomeScreen = () => {
                         <Text style={styles.rankingHeaderText}>전체 하트 랭킹</Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {rankingData.map((item, index) => (
+                        {sortedRankingData.map((item, index) => (
                             <View key={`ranking-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
@@ -328,7 +353,7 @@ const HomeScreen = () => {
                         <Text style={styles.rankingHeaderText}>이달의 랭킹</Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {monthlyRankingData.map((item, index) => (
+                        {sortedMonthlyRankingData.map((item, index) => (
                             <View key={`monthly-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
@@ -343,7 +368,7 @@ const HomeScreen = () => {
                         <Text style={styles.rankingHeaderText}>우리 지역 랭킹</Text>
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {localRankingData.map((item, index) => (
+                        {sortedLocalRankingData.map((item, index) => (
                             <View key={`local-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
