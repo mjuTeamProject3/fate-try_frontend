@@ -84,8 +84,10 @@ function RootLayoutNav() {
   return (
     <I18nProvider>
       <ThemeProvider value={theme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* 전체 스택 네비게이터에서 기본 헤더를 숨겨서
+            각 화면에서 커스텀 헤더를 직접 그릴 수 있도록 설정 */}
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>
       </ThemeProvider>
