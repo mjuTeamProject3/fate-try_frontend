@@ -36,6 +36,9 @@ const HomeScreen = () => {
     const [showRandomModal, setShowRandomModal] = useState(false);
     // 알림 갯수 상태
     const [notificationCount, setNotificationCount] = useState(4); // 안읽은 알림 개수
+    // 랭킹 목록 모달 상태
+    const [showRankingModal, setShowRankingModal] = useState(false);
+    const [rankingModalType, setRankingModalType] = useState<'all' | 'monthly' | 'local'>('all');
     
     // 안읽은 알림 개수 계산 함수
     const getUnreadNotificationCount = () => {
@@ -337,12 +340,27 @@ const HomeScreen = () => {
                         <Ionicons name="trophy-outline" size={20} color="#333" />
                         <Text style={styles.rankingHeaderText}>전체 하트 랭킹</Text>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {sortedRankingData.map((item, index) => (
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false} 
+                        style={styles.rankingScroll}
+                        contentContainerStyle={styles.rankingScrollContent}
+                    >
+                        {sortedRankingData.slice(0, 5).map((item, index) => (
                             <View key={`ranking-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
                         ))}
+                        <TouchableOpacity 
+                            style={styles.viewAllButton}
+                            onPress={() => {
+                                setRankingModalType('all');
+                                setShowRankingModal(true);
+                            }}
+                        >
+                            <Ionicons name="chevron-forward-circle-outline" size={30} color="#4CAF50" />
+                            <Text style={styles.viewAllText}>전체보기</Text>
+                        </TouchableOpacity>
                     </ScrollView>
                 </View>
 
@@ -352,12 +370,27 @@ const HomeScreen = () => {
                         <Feather name="calendar" size={20} color="#333" />
                         <Text style={styles.rankingHeaderText}>이달의 랭킹</Text>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {sortedMonthlyRankingData.map((item, index) => (
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false} 
+                        style={styles.rankingScroll}
+                        contentContainerStyle={styles.rankingScrollContent}
+                    >
+                        {sortedMonthlyRankingData.slice(0, 5).map((item, index) => (
                             <View key={`monthly-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
                         ))}
+                        <TouchableOpacity 
+                            style={styles.viewAllButton}
+                            onPress={() => {
+                                setRankingModalType('monthly');
+                                setShowRankingModal(true);
+                            }}
+                        >
+                            <Ionicons name="chevron-forward-circle-outline" size={30} color="#4CAF50" />
+                            <Text style={styles.viewAllText}>전체보기</Text>
+                        </TouchableOpacity>
                     </ScrollView>
                 </View>
 
@@ -367,12 +400,27 @@ const HomeScreen = () => {
                         <Ionicons name="location-outline" size={20} color="#333" />
                         <Text style={styles.rankingHeaderText}>우리 지역 랭킹</Text>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rankingScroll}>
-                        {sortedLocalRankingData.map((item, index) => (
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false} 
+                        style={styles.rankingScroll}
+                        contentContainerStyle={styles.rankingScrollContent}
+                    >
+                        {sortedLocalRankingData.slice(0, 5).map((item, index) => (
                             <View key={`local-${item.id}`}>
                                 {renderRankingCard(item, index)}
                             </View>
                         ))}
+                        <TouchableOpacity 
+                            style={styles.viewAllButton}
+                            onPress={() => {
+                                setRankingModalType('local');
+                                setShowRankingModal(true);
+                            }}
+                        >
+                            <Ionicons name="chevron-forward-circle-outline" size={30} color="#4CAF50" />
+                            <Text style={styles.viewAllText}>전체보기</Text>
+                        </TouchableOpacity>
                     </ScrollView>
                 </View>
                 
@@ -618,6 +666,83 @@ const HomeScreen = () => {
                 imageSource={selectedProfile?.image}
                 userName={selectedProfile?.title || '사용자'}
             />
+
+            {/* 랭킹 목록 모달 */}
+            <Modal
+                visible={showRankingModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowRankingModal(false)}
+            >
+                <View style={styles.rankingModalOverlay}>
+                    <View style={styles.rankingModal}>
+                        <View style={styles.rankingModalHeader}>
+                            <Text style={styles.rankingModalTitle}>
+                                {rankingModalType === 'all' ? '전체 하트 랭킹' : 
+                                 rankingModalType === 'monthly' ? '이달의 랭킹' : 
+                                 '우리 지역 랭킹'}
+                            </Text>
+                            <TouchableOpacity 
+                                onPress={() => setShowRankingModal(false)}
+                                style={styles.closeButton}
+                            >
+                                <Ionicons name="close" size={24} color="#333" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView 
+                            style={styles.rankingModalScroll}
+                            contentContainerStyle={styles.rankingModalContent}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {(() => {
+                                const data = rankingModalType === 'all' ? sortedRankingData :
+                                           rankingModalType === 'monthly' ? sortedMonthlyRankingData :
+                                           sortedLocalRankingData;
+                                return data.map((item, index) => (
+                                    <TouchableOpacity
+                                        key={`modal-${rankingModalType}-${item.id}`}
+                                        style={styles.rankingModalItem}
+                                        onPress={async () => {
+                                            setSelectedProfile(item);
+                                            setIsHeartLiked(false);
+                                            setIsFriendAdded(false);
+                                            setKeywordsExpanded(false);
+                                            setShowRankingModal(false);
+                                            
+                                            const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                                            const requests = pendingRequests ? JSON.parse(pendingRequests) : [];
+                                            const hasRequestSent = requests.some((req: any) => req.userName === item.title);
+                                            setIsFriendRequestSent(hasRequestSent);
+                                            
+                                            setShowProfileModal(true);
+                                        }}
+                                    >
+                                        <View style={styles.rankingModalItemLeft}>
+                                            <Text style={styles.rankingModalNumber}>{index + 1}</Text>
+                                            <View style={styles.rankingModalAvatar}>
+                                                {item.image ? (
+                                                    <Image 
+                                                        source={typeof item.image === 'string' ? { uri: item.image } : item.image} 
+                                                        style={styles.rankingModalAvatarImage}
+                                                        resizeMode="cover"
+                                                    />
+                                                ) : (
+                                                    <Text style={styles.rankingModalAvatarText}>{item.title.substring(0, 2)}</Text>
+                                                )}
+                                            </View>
+                                            <Text style={styles.rankingModalName}>{item.title}</Text>
+                                        </View>
+                                        <View style={styles.heartScore}>
+                                            <AntDesign name="heart" size={16} color="#E53935" />
+                                            <Text style={styles.scoreText}>{item.score.toLocaleString()}</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                ));
+                            })()}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
 
         </View>
     );

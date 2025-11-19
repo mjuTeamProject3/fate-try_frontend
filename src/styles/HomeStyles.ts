@@ -105,9 +105,19 @@ const styles = StyleSheet.create({
     rankingHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 5 },
     rankingHeaderText: { fontSize: 18, fontWeight: 'bold', marginLeft: 8, color: '#333' },
     rankingScroll: {},
+    rankingScrollContent: {
+        paddingRight: 15,
+    },
     rankingCard: {
-        alignItems: 'center', width: width * 0.25, marginRight: 15,
+        alignItems: 'center', width: width * 0.25, marginRight: 10,
         paddingVertical: 15, paddingHorizontal: 10, backgroundColor: '#fff', borderRadius: 12,
+    },
+    viewAllButton: {
+        alignItems: 'center', justifyContent: 'center', width: 60, marginRight: 10,
+        paddingVertical: 10, paddingHorizontal: 5, backgroundColor: 'transparent', borderRadius: 12,
+    },
+    viewAllText: {
+        fontSize: 12, color: '#4CAF50', fontWeight: '600', marginTop: 3,
     },
     rankingNumber: { fontSize: 16, fontWeight: 'bold', color: '#4CAF50', marginBottom: 5 },
     rankingAvatar: {
@@ -173,6 +183,45 @@ const styles = StyleSheet.create({
     imageModalCloseButton: { position: 'absolute', top: 20, right: 20, zIndex: 1000, backgroundColor: 'rgba(0, 0, 0, 0.7)', borderRadius: 20, padding: 10 },
     expandedAvatar: { width: 200, height: 200, borderRadius: 100, backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     expandedAvatarText: { fontSize: 24, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
+    rankingModalOverlay: {
+        flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end',
+    },
+    rankingModal: {
+        backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '85%', paddingTop: 20,
+    },
+    rankingModalHeader: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#eee',
+    },
+    rankingModalTitle: {
+        fontSize: 20, fontWeight: 'bold', color: '#333',
+    },
+    rankingModalScroll: {
+        flex: 1,
+    },
+    rankingModalContent: {
+        padding: 20,
+    },
+    rankingModalItem: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+    },
+    rankingModalItemLeft: {
+        flexDirection: 'row', alignItems: 'center', flex: 1,
+    },
+    rankingModalNumber: {
+        fontSize: 18, fontWeight: 'bold', color: '#4CAF50', width: 30, textAlign: 'center',
+    },
+    rankingModalAvatar: {
+        width: 50, height: 50, borderRadius: 25, backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden',
+    },
+    rankingModalAvatarImage: {
+        width: 50, height: 50, borderRadius: 25,
+    },
+    rankingModalAvatarText: {
+        color: '#fff', fontSize: 14, fontWeight: 'bold',
+    },
+    rankingModalName: {
+        fontSize: 16, fontWeight: '500', color: '#333', flex: 1,
+    },
 });
 
 export default styles;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, View, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, TouchableOpacity, TextInput, Alert, SafeAreaView } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -86,7 +86,7 @@ export default function ChatScreen() {
     ];
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             {/* 헤더 */}
             <View style={styles.header}>
                 <TouchableOpacity 
@@ -440,6 +440,6 @@ export default function ChatScreen() {
                 imageUri={null}
                 userName={selectedChat?.name || '친구'}
             />
-        </View>
+        </SafeAreaView>
     );
 }

@@ -21,7 +21,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: getStatusBarHeight() + 5,
+        paddingTop: Platform.OS === 'ios' ? 20 : getStatusBarHeight() + 20,
         paddingBottom: 15,
         backgroundColor: 'white',
         borderBottomWidth: 1,

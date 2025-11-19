@@ -1,12 +1,27 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 export default function ProfileMenuScreen() {
+    const getStatusBarHeight = () => {
+        if (Platform.OS === 'android') {
+            return StatusBar.currentHeight || 0;
+        }
+        return 0;
+    };
+
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
+            <View style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                paddingHorizontal: 16, 
+                paddingTop: Platform.OS === 'ios' ? 0 : getStatusBarHeight() + 12,
+                paddingBottom: 12, 
+                borderBottomWidth: 1, 
+                borderBottomColor: '#eee' 
+            }}>
                 <TouchableOpacity onPress={() => router.back()} style={{ paddingRight: 12, paddingVertical: 4 }}>
                     <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
