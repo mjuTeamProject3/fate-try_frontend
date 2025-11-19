@@ -78,9 +78,9 @@ export default function LoginScreen() {
                 }
                 await AsyncStorage.setItem('loginProvider', provider);
                 await AsyncStorage.setItem('isLoggedIn', 'true');
-
-                // 홈 화면으로 이동
-                router.replace('/(tabs)');
+                
+                // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
+                router.replace('/signup-additional');
             } else {
                 // 토큰이 없는 경우, 백엔드에서 추가 정보를 요구할 수 있음
                 // 또는 백엔드에서 직접 처리하는 경우를 위해 URL 전체를 백엔드로 전달
@@ -89,7 +89,9 @@ export default function LoginScreen() {
                 Alert.alert('로그인 성공', '로그인에 성공했습니다.');
                 await AsyncStorage.setItem('loginProvider', provider);
                 await AsyncStorage.setItem('isLoggedIn', 'true');
-                router.replace('/(tabs)');
+                
+                // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
+                router.replace('/signup-additional');
             }
         } catch (error) {
             console.error('인증 콜백 처리 오류:', error);
@@ -105,8 +107,8 @@ export default function LoginScreen() {
             await AsyncStorage.setItem('accessToken', 'temp_login_token_' + Date.now());
             await AsyncStorage.setItem('loginProvider', 'temp');
             
-            // 바로 홈 화면으로 이동
-            router.replace('/(tabs)');
+            // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
+            router.replace('/signup-additional');
         } catch (error) {
             console.error('임시 로그인 오류:', error);
         }

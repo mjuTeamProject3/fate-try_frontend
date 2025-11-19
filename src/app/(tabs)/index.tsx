@@ -48,15 +48,35 @@ const HomeScreen = () => {
         return friendRequests + otherNotifications;
     };
 
-    // 컴포넌트 마운트 시 알림 개수 로드
+    // 최초 회원가입 체크 함수 (개발용: 항상 추가정보 페이지로 이동)
+    const checkFirstSignup = async () => {
+        try {
+            // 개발용 버튼으로 스킵한 경우 체크 건너뛰기
+            const tempSkip = await AsyncStorage.getItem('tempSkipSignup');
+            if (tempSkip === 'true') {
+                // 임시 플래그 제거
+                await AsyncStorage.removeItem('tempSkipSignup');
+                return;
+            }
+            
+            // 개발 중: 기록 저장하지 않고 매번 추가정보 페이지로 이동
+            router.replace('/signup-additional');
+        } catch (error) {
+            console.error('최초 회원가입 체크 오류:', error);
+        }
+    };
+
+    // 컴포넌트 마운트 시 알림 개수 로드 및 최초 회원가입 체크
     useEffect(() => {
         loadNotificationCount();
+        checkFirstSignup();
     }, []);
 
-    // 화면 포커스 시 알림 개수 다시 로드
+    // 화면 포커스 시 알림 개수 다시 로드 및 최초 회원가입 체크
     useFocusEffect(
         React.useCallback(() => {
             loadNotificationCount();
+            checkFirstSignup();
         }, [])
     );
 
