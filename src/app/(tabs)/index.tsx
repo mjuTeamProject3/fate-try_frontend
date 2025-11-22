@@ -60,36 +60,44 @@ const HomeScreen = () => {
         return friendRequests + otherNotifications;
     };
 
-    // 최초 회원가입 체크 함수 (개발용: 항상 추가정보 페이지로 이동)
+    // 최초 회원가입 체크 함수 (한 번만 실행)
     const checkFirstSignup = async () => {
         try {
-            // 개발용 버튼으로 스킵한 경우 체크 건너뛰기
-            const tempSkip = await AsyncStorage.getItem('tempSkipSignup');
-            if (tempSkip === 'true') {
-                // 임시 플래그 제거
-                await AsyncStorage.removeItem('tempSkipSignup');
-                return;
+            // 이미 체크했는지 확인
+            const hasCheckedSignup = await AsyncStorage.getItem('hasCheckedSignup');
+            if (hasCheckedSignup === 'true') {
+                return; // 이미 체크했으면 건너뛰기
             }
             
-            // 개발 중: 기록 저장하지 않고 매번 추가정보 페이지로 이동
-            router.replace('/signup-additional');
+            // 프로필 정보가 있는지 확인
+            const userNickname = await AsyncStorage.getItem('userNickname');
+            const userBirthDate = await AsyncStorage.getItem('userBirthDate');
+            const userRegion = await AsyncStorage.getItem('userRegion');
+            const userGender = await AsyncStorage.getItem('userGender');
+            
+            // 프로필 정보가 없으면 추가 정보 입력 페이지로 이동
+            if (!userNickname || !userBirthDate || !userRegion || !userGender) {
+                router.replace('/signup-additional');
+            } else {
+                // 프로필 정보가 있으면 체크 완료 표시
+                await AsyncStorage.setItem('hasCheckedSignup', 'true');
+            }
         } catch (error) {
             console.error('최초 회원가입 체크 오류:', error);
         }
     };
 
-    // 컴포넌트 마운트 시 알림 개수 로드 및 최초 회원가입 체크
+    // 컴포넌트 마운트 시 알림 개수 로드 및 최초 회원가입 체크 (한 번만)
     useEffect(() => {
         loadNotificationCount();
         checkFirstSignup();
         loadAllRankings();
     }, []);
 
-    // 화면 포커스 시 알림 개수 다시 로드 및 최초 회원가입 체크
+    // 화면 포커스 시 알림 개수 다시 로드 및 랭킹 새로고침 (회원가입 체크는 제외)
     useFocusEffect(
         React.useCallback(() => {
             loadNotificationCount();
-            checkFirstSignup();
             loadAllRankings(); // 화면 포커스 시 랭킹 새로고침
         }, [])
     );

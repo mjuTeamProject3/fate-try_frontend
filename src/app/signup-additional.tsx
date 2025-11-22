@@ -136,21 +136,47 @@ export default function SignupAdditionalScreen() {
         setIsSubmitting(true);
 
         try {
-            // 닉네임 저장 (임시)
-            const existingNicknames = await AsyncStorage.getItem('registeredNicknames');
-            const nicknames = existingNicknames ? JSON.parse(existingNicknames) : [];
-            nicknames.push(nickname);
-            await AsyncStorage.setItem('registeredNicknames', JSON.stringify(nicknames));
+            // Access Token 확인
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                Alert.alert('오류', '로그인이 필요합니다. 다시 로그인해주세요.');
+                router.replace('/login');
+                return;
+            }
 
-            // 추가 정보 저장 (개발 중: 임시로만 저장)
+            // 백엔드 API로 프로필 업데이트
+            const { USER_ENDPOINTS } = await import('@/constants/api');
+            const response = await fetch(USER_ENDPOINTS.profile, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    username: nickname,
+                    birthdate: birthDate,
+                    location: region,
+                    gender: gender === 'male' ? '남성' : '여성',
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('프로필 업데이트 오류:', errorData);
+                throw new Error(errorData.error?.reason || '프로필 업데이트 실패');
+            }
+
+            const data = await response.json();
+            console.log('✅ 프로필 업데이트 성공:', data);
+
+            // 로컬 스토리지에도 저장 (오프라인 대비)
             await AsyncStorage.setItem('userNickname', nickname);
             await AsyncStorage.setItem('userBirthDate', birthDate);
             await AsyncStorage.setItem('userRegion', region);
             await AsyncStorage.setItem('userGender', gender);
             
-            // 개발 중: 최초 회원가입 완료 플래그 저장하지 않음 (매번 추가정보 페이지 표시)
-            // 임시 스킵 플래그 설정 (홈 화면에서 체크 건너뛰기)
-            await AsyncStorage.setItem('tempSkipSignup', 'true');
+            // 회원가입 완료 플래그 저장 (홈 화면에서 체크 건너뛰기)
+            await AsyncStorage.setItem('hasCheckedSignup', 'true');
 
             Alert.alert('회원가입 완료', '추가 정보가 성공적으로 등록되었습니다.', [
                 {
@@ -162,7 +188,7 @@ export default function SignupAdditionalScreen() {
             ]);
         } catch (error) {
             console.error('회원가입 정보 저장 오류:', error);
-            Alert.alert('오류', '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.');
+            Alert.alert('오류', error.message || '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.');
         } finally {
             setIsSubmitting(false);
         }

@@ -31,3 +31,10 @@ export const RANKING_ENDPOINTS = {
 // 사용자 좋아요 엔드포인트
 export const getUserLikeEndpoint = (userId: number) => `${API_BASE_URL}/user/${userId}/like`;
 
+// 사용자 프로필 엔드포인트
+export const USER_ENDPOINTS = {
+    profile: `${API_BASE_URL}/user/profile`,
+    like: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
+    unlike: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
+};
+

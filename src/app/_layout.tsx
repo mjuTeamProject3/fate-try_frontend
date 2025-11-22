@@ -5,6 +5,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
+import * as Linking from 'expo-linking';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -71,11 +72,74 @@ function RootLayoutNav() {
     }
   };
 
-  // 초기 로그인 상태 확인 (리다이렉트 없이)
+  // Deep linking 처리 함수
+  const handleDeepLink = async (url: string) => {
+    try {
+      console.log('🔗 Deep link 수신:', url);
+      const parsed = Linking.parse(url);
+      
+      // 인증 콜백 처리
+      if (parsed.path === 'auth/callback') {
+        const accessToken = parsed.queryParams?.accessToken as string;
+        const refreshToken = parsed.queryParams?.refreshToken as string;
+        const profileComplete = parsed.queryParams?.profileComplete as string;
+        const missingFields = parsed.queryParams?.missingFields as string;
+        
+        if (accessToken) {
+          // 토큰 저장
+          await AsyncStorage.setItem('accessToken', accessToken);
+          if (refreshToken) {
+            await AsyncStorage.setItem('refreshToken', refreshToken);
+          }
+          await AsyncStorage.setItem('isLoggedIn', 'true');
+          
+          // 프로필 완성 여부에 따라 라우팅
+          if (profileComplete === 'true') {
+            // 프로필 완성 → 홈 화면으로
+            console.log('✅ 프로필 완성, 홈 화면으로 이동');
+            router.replace('/(tabs)');
+          } else {
+            // 프로필 미완성 → 프로필 정보 입력 페이지로
+            console.log('📝 프로필 미완성, 프로필 정보 입력 페이지로 이동');
+            if (missingFields) {
+              console.log('⚠️ 누락된 필드:', missingFields);
+            }
+            router.replace('/signup-additional');
+          }
+        }
+      } 
+      // 에러 처리
+      else if (parsed.path === 'auth/error') {
+        const error = parsed.queryParams?.error as string;
+        console.error('❌ 로그인 에러:', error);
+        // 에러 메시지를 표시하거나 로그인 화면으로 이동
+        router.replace('/login');
+      }
+    } catch (error) {
+      console.error('Deep link 처리 오류:', error);
+    }
+  };
+
+  // 초기 로그인 상태 확인 및 Deep linking 설정
   useEffect(() => {
     (async () => {
       await checkLoginStatus();
       setIsInitialized(true);
+      
+      // 초기 URL 확인 (앱이 이미 열려있을 때)
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl) {
+        await handleDeepLink(initialUrl);
+      }
+      
+      // Deep link 리스너 등록
+      const subscription = Linking.addEventListener('url', (event) => {
+        handleDeepLink(event.url);
+      });
+      
+      return () => {
+        subscription.remove();
+      };
     })();
   }, []);
 

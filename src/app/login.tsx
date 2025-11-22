@@ -6,7 +6,7 @@ import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from '@/styles/LoginStyles';
-import { AUTH_ENDPOINTS, CALLBACK_URL } from '@/constants/api';
+import { AUTH_ENDPOINTS, API_BASE_URL } from '@/constants/api';
 
 // WebBrowser 완료 후 동작을 개선하기 위한 설정
 WebBrowser.maybeCompleteAuthSession();
@@ -24,27 +24,35 @@ export default function LoginScreen() {
             // 백엔드 OAuth 시작 URL
             const authUrl = AUTH_ENDPOINTS[provider];
             
-            // 리다이렉트 URL 생성 (백엔드에서 처리할 콜백 URL)
-            // 백엔드 API 형식에 맞게 수정이 필요할 수 있습니다
-            const redirectUrl = `${authUrl}?redirect_uri=${encodeURIComponent(CALLBACK_URL)}`;
+            // 백엔드가 HTML 페이지로 리다이렉트하므로, HTML 페이지 URL을 콜백으로 사용
+            // ngrok URL 또는 localhost에 따라 동적으로 설정
+            const baseUrl = API_BASE_URL.replace('/v1/api', ''); // API_BASE_URL에서 /v1/api 제거
+            const htmlCallbackUrl = `${baseUrl}/auth/callback`;
 
             // WebBrowser로 OAuth 인증 시작
+            // HTML 페이지 URL을 콜백으로 사용 (백엔드가 HTML 페이지로 리다이렉트함)
             const result = await WebBrowser.openAuthSessionAsync(
-                redirectUrl,
-                CALLBACK_URL
+                authUrl,
+                htmlCallbackUrl
             );
 
             if (result.type === 'success') {
                 // 성공 시 URL에서 토큰 추출
                 const { url } = result;
+                console.log('✅ WebBrowser 콜백 성공:', url);
                 await handleAuthCallback(url, provider);
             } else if (result.type === 'cancel') {
                 Alert.alert('로그인 취소', '로그인이 취소되었습니다.');
+            } else if (result.type === 'dismiss') {
+                // dismiss 타입: HTML 페이지가 열려있지만 WebBrowser가 자동으로 감지하지 못한 경우
+                // HTML 페이지가 열려있을 수 있으므로, 사용자에게 수동으로 닫도록 안내
+                console.log('⚠️ WebBrowser dismiss - HTML 페이지가 열려있을 수 있음');
+                Alert.alert(
+                    '로그인 완료',
+                    '로그인이 완료되었습니다. 브라우저를 닫고 앱으로 돌아가주세요.'
+                );
             } else {
-                // dismiss 타입인 경우도 처리
-                if (result.type !== 'dismiss') {
-                    Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다.');
-                }
+                Alert.alert('로그인 실패', '로그인 중 오류가 발생했습니다.');
             }
         } catch (error) {
             console.error(`${provider} 로그인 오류:`, error);
@@ -57,41 +65,50 @@ export default function LoginScreen() {
     // 인증 콜백 처리
     const handleAuthCallback = async (url: string, provider: SocialProvider) => {
         try {
-            // URL에서 토큰 추출 (백엔드에서 전달하는 형식에 맞게 수정 필요)
+            console.log('🔗 콜백 URL 수신:', url);
+            
+            // URL에서 토큰 추출
             const parsedUrl = Linking.parse(url);
             
-            // 다양한 가능한 토큰 파라미터 이름 처리
-            const token = 
-                (parsedUrl.queryParams?.token as string) ||
+            // HTML 페이지 URL에서 토큰 추출 (백엔드가 HTML 페이지로 리다이렉트함)
+            const accessToken = 
+                (parsedUrl.queryParams?.accessToken as string) ||
                 (parsedUrl.queryParams?.access_token as string) ||
-                (parsedUrl.queryParams?.accessToken as string);
+                (parsedUrl.queryParams?.token as string);
             
             const refreshToken = 
-                (parsedUrl.queryParams?.refresh_token as string) ||
-                (parsedUrl.queryParams?.refreshToken as string);
+                (parsedUrl.queryParams?.refreshToken as string) ||
+                (parsedUrl.queryParams?.refresh_token as string);
+            
+            const profileComplete = parsedUrl.queryParams?.profileComplete as string;
+            const missingFields = parsedUrl.queryParams?.missingFields as string;
 
-            if (token) {
+            if (accessToken) {
                 // 토큰 저장
-                await AsyncStorage.setItem('accessToken', token);
+                await AsyncStorage.setItem('accessToken', accessToken);
                 if (refreshToken) {
                     await AsyncStorage.setItem('refreshToken', refreshToken);
                 }
                 await AsyncStorage.setItem('loginProvider', provider);
                 await AsyncStorage.setItem('isLoggedIn', 'true');
                 
-                // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
-                router.replace('/signup-additional');
+                // 프로필 완성 여부에 따라 라우팅
+                if (profileComplete === 'true') {
+                    // 프로필 완성 → 홈 화면으로
+                    console.log('✅ 프로필 완성, 홈 화면으로 이동');
+                    router.replace('/(tabs)');
+                } else {
+                    // 프로필 미완성 → 프로필 정보 입력 페이지로
+                    console.log('📝 프로필 미완성, 프로필 정보 입력 페이지로 이동');
+                    if (missingFields) {
+                        console.log('⚠️ 누락된 필드:', missingFields);
+                    }
+                    router.replace('/signup-additional');
+                }
             } else {
-                // 토큰이 없는 경우, 백엔드에서 추가 정보를 요구할 수 있음
-                // 또는 백엔드에서 직접 처리하는 경우를 위해 URL 전체를 백엔드로 전달
-                // 실제 백엔드 구현에 따라 이 부분을 수정해야 할 수 있습니다
-                console.log('콜백 URL:', url);
-                Alert.alert('로그인 성공', '로그인에 성공했습니다.');
-                await AsyncStorage.setItem('loginProvider', provider);
-                await AsyncStorage.setItem('isLoggedIn', 'true');
-                
-                // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
-                router.replace('/signup-additional');
+                // 토큰이 없는 경우
+                console.log('⚠️ 토큰을 받지 못했습니다. 콜백 URL:', url);
+                Alert.alert('로그인 실패', '토큰을 받지 못했습니다. 다시 시도해주세요.');
             }
         } catch (error) {
             console.error('인증 콜백 처리 오류:', error);
