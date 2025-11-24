@@ -309,9 +309,11 @@ const HomeScreen = () => {
     const winterImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDA2MThfMTI2%2FMDAxNzE4NzE1MzY5MzE2.XnAiCKUtZEdp2tDd1uM2DzXN4NMmcTYmirw_Bu3PPQkg.LyIbnUReCguvcpC_tQgP8W2HDFpfEH0FYgczZC-shH8g.JPEG%2F5750d7f52ba30dd42c905601803107c3.jpg&type=a340'
     const sulyunImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fimgnews.naver.net%2Fimage%2F109%2F2022%2F12%2F13%2F0004757144_001_20221213185803598.jpg&type=a340'
     const kazuhaImageUrl ='https://search.pstatic.net/sunny/?src=http%3A%2F%2Ffile3.instiz.net%2Fdata%2Fcached_img%2Fupload%2F2022%2F12%2F25%2F3%2F6822dad56c54d678147b15b771cce57c.jpg&type=sc960_832'
-
-
-    // 전체 랭킹: API에서 받은 데이터 사용 (더미 데이터는 fallback으로 유지)
+    const giselleImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNTA0MjBfMzYg%2FMDAxNzQ1MTIzNTkwMjY1.uv6OexKH6hef0Who4j819e4PQDnj8ufpRvnBIOQdWjgg.XDJ1IfkanTO3OccaegVCzF3bui1UdLoItK5cpmlGYeUg.JPEG%2FIMG_4385.JPG&type=sc960_832' // 
+    const yejiImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fimgnews.naver.net%2Fimage%2F311%2F2024%2F11%2F22%2F0001798788_001_20241122161810711.jpg&type=sc960_832'
+    const ningImageUrl = 'https://search.pstatic.net/sunny/?src=https%3A%2F%2Fupload3.inven.co.kr%2Fupload%2F2024%2F07%2F24%2Fbbs%2Fi1297492339.jpg%3FMW%3D800&type=sc960_832'
+    const wonyoungImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fimgnews.naver.net%2Fimage%2F5002%2F2024%2F11%2F24%2F0002740953_001_20241124104215478.jpg&type=sc960_832'
+    const lizImageUrl = 'https://search.pstatic.net/sunny/?src=https%3A%2F%2Fwww.nemopan.com%2Ffiles%2Fattach%2Fimages%2F6294%2F662%2F990%2F018%2Fe959a9130ca6301ff45c53e10deac84a.jpg&type=sc960_832'
     const sortedRankingData = useMemo(
         () => {
             if (overallRanking.length > 0) {
@@ -328,6 +330,12 @@ const HomeScreen = () => {
         { id: 3, title: '윈터', score: 11250, icon: 'person', image: winterImageUrl },
         { id: 4, title: '설윤', score: 9870, icon: 'person', image: sulyunImageUrl },
         { id: 5, title: '카즈하', score: 9200, icon: 'person' , image: kazuhaImageUrl },
+        { id: 6, title: '지젤', score: 8500, icon: 'person', image: giselleImageUrl }, 
+        { id: 7, title: '예지', score: 8000, icon: 'person', image: yejiImageUrl },
+        { id: 8, title: '닝닝닝', score: 7500, icon: 'person', image: ningImageUrl },
+        { id: 9, title: '원영', score: 7000, icon: 'person', image: wonyoungImageUrl }, 
+        { id: 10, title: '리즈', score: 6500, icon: 'person', image: lizImageUrl },
+
             ];
             return fallbackData.sort((a, b) => Number(b.score) - Number(a.score));
         },
@@ -340,6 +348,7 @@ const HomeScreen = () => {
     const julieImageUrl = 'https://search.pstatic.net/sunny/?src=https%3A%2F%2Fimg-cdn.theqoo.net%2FjoYDjc.jpg&type=sc960_832'
     const yuyunImageUrl = 'https://search.pstatic.net/sunny/?src=http%3A%2F%2Ffile3.instiz.net%2Fdata%2Fcached_img%2Fupload%2F2022%2F02%2F04%2F15%2F4fbeedcee7f673e141dcdb3234fff3b6.jpg&type=a340'
     const natiImageUrl = 'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyNDAxMTRfMTA4%2FMDAxNzA1MjI1NDE1NzYy.v5CQhWcExHieBvdB7k4G7BrTjaMrA_lmF7p9NS9gfjcg.brwb6KYmfkdrvKEWny-5aATE-uq2BZ8IPjMg8axk6esg.JPEG.idhair3377%2FKakaoTalk%25A3%25DF20240102%25A3%25DF202648326%25A3%25DF02.jpg&type=sc960_832'
+    
     //이달의 랭킹 데이터를 위한 더미 배열
     const monthlyRankingData: RankingItem[] = [
         { id: 1, title: '김채원', score: 8650, icon: 'person' , image: chaewonImageUrl },
