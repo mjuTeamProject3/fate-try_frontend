@@ -52,6 +52,44 @@ const HomeScreen = () => {
     const [isLoadingMonthly, setIsLoadingMonthly] = useState(false);
     const [isLoadingLocal, setIsLoadingLocal] = useState(false);
     
+    // 생년월일 정보 상태
+    const [formattedBirthDate, setFormattedBirthDate] = useState<string>('정보 없음');
+
+    // 생년월일 포맷팅 함수 (YYYY-MM-DD -> YYYY년 M월 D일 • 요일)
+    const formatBirthDate = (dateString: string): string => {
+        if (!dateString) return '정보 없음';
+        
+        try {
+            const [year, month, day] = dateString.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            
+            // 요일 배열
+            const weekdays = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+            const weekday = weekdays[date.getDay()];
+            
+            return `${year}년 ${month}월 ${day}일 • ${weekday}`;
+        } catch (error) {
+            console.error('생년월일 포맷팅 오류:', error);
+            return '정보 없음';
+        }
+    };
+
+    // 생년월일 정보 로드
+    const loadBirthDate = async () => {
+        try {
+            const userBirthDate = await AsyncStorage.getItem('userBirthDate');
+            if (userBirthDate) {
+                const formatted = formatBirthDate(userBirthDate);
+                setFormattedBirthDate(formatted);
+            } else {
+                setFormattedBirthDate('정보 없음');
+            }
+        } catch (error) {
+            console.error('생년월일 로드 오류:', error);
+            setFormattedBirthDate('정보 없음');
+        }
+    };
+    
     // 안읽은 알림 개수 계산 함수
     const getUnreadNotificationCount = () => {
         // 실제로는 서버에서 받아와야 하지만, 여기서는 더미 데이터로 계산
@@ -63,6 +101,30 @@ const HomeScreen = () => {
     // 최초 회원가입 체크 함수 (한 번만 실행)
     const checkFirstSignup = async () => {
         try {
+            // 먼저 로그인 상태 확인
+            const loginStatus = await AsyncStorage.getItem('isLoggedIn');
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            
+            // 토큰이 없거나 유효하지 않으면 로그인 화면으로 이동
+            // dev_temp_token_은 개발용으로 허용
+            const isValidToken = accessToken !== null && 
+                                accessToken !== 'temp_token' && 
+                                !accessToken.startsWith('temp_login_token_') &&
+                                (accessToken.startsWith('dev_temp_token_') || !accessToken.startsWith('temp_'));
+            
+            if (loginStatus !== 'true' || !isValidToken) {
+                console.log('🚫 토큰이 없거나 유효하지 않음, 로그인 화면으로 이동');
+                router.replace('/login');
+                return;
+            }
+            
+            // 개발용 스킵 플래그 확인 (가장 먼저 체크)
+            const tempSkipSignup = await AsyncStorage.getItem('tempSkipSignup');
+            if (tempSkipSignup === 'true') {
+                console.log('✅ 개발용 스킵 플래그 활성화, 체크 건너뛰기');
+                return; // 개발용 스킵 플래그가 있으면 모든 체크 건너뛰기
+            }
+            
             // 이미 체크했는지 확인
             const hasCheckedSignup = await AsyncStorage.getItem('hasCheckedSignup');
             if (hasCheckedSignup === 'true') {
@@ -84,6 +146,8 @@ const HomeScreen = () => {
             }
         } catch (error) {
             console.error('최초 회원가입 체크 오류:', error);
+            // 에러 발생 시 로그인 화면으로 이동
+            router.replace('/login');
         }
     };
 
@@ -92,6 +156,7 @@ const HomeScreen = () => {
         loadNotificationCount();
         checkFirstSignup();
         loadAllRankings();
+        loadBirthDate();
     }, []);
 
     // 화면 포커스 시 알림 개수 다시 로드 및 랭킹 새로고침 (회원가입 체크는 제외)
@@ -99,6 +164,7 @@ const HomeScreen = () => {
         React.useCallback(() => {
             loadNotificationCount();
             loadAllRankings(); // 화면 포커스 시 랭킹 새로고침
+            loadBirthDate(); // 생년월일 정보도 다시 로드
         }, [])
     );
 
@@ -440,7 +506,7 @@ const HomeScreen = () => {
                         <AntDesign name="star" size={24} color="#4CAF50" />
                         <View style={styles.sajuTextContainer}>
                             <Text style={styles.sajuInfoTitle}>내 사주 정보</Text>
-                            <Text style={styles.sajuInfoDetail}>2003년 3월 18일 • 화요일</Text>
+                            <Text style={styles.sajuInfoDetail}>{formattedBirthDate}</Text>
                         </View>
                     </View>
                     <AntDesign 

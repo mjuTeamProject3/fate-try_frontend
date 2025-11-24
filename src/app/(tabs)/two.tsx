@@ -11,25 +11,48 @@ import ImageModal from '@/components/ImageModal';
 export default function ProfileScreen() {
     // 친구 목록 데이터 (저장된 값 기반)
     const [friendsData, setFriendsData] = React.useState<{ id: number; name: string }[]>([]);
+    
+    // 사용자 프로필 정보
+    const [userName, setUserName] = React.useState('홍길동');
+    const [userLocation, setUserLocation] = React.useState('경기도');
+    const [userAge, setUserAge] = React.useState<string>('');
+    const [userBio, setUserBio] = React.useState('');
 
     // 친구 목록을 가나다 순으로 정렬하는 함수
     const sortFriendsByName = (friendsList: { id: number; name: string }[]) => {
         return friendsList.sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
     };
 
+    // 프로필 정보 로드
+    const loadProfileData = React.useCallback(async () => {
+        try {
+            // 사용자 프로필 정보 로드
+            const nickname = await AsyncStorage.getItem('userNickname');
+            const region = await AsyncStorage.getItem('userRegion');
+            const age = await AsyncStorage.getItem('userAge');
+            const bio = await AsyncStorage.getItem('userBio');
+            
+            if (nickname) setUserName(nickname);
+            if (region) setUserLocation(region);
+            if (age) setUserAge(age);
+            if (bio) setUserBio(bio);
+            
+            // 친구 목록 로드
+            const stored = await AsyncStorage.getItem('friends_list');
+            if (stored) {
+                const list = JSON.parse(stored) as Array<{ id: number; name: string }>;
+                const sortedList = sortFriendsByName(list);
+                setFriendsData(sortedList.slice(0, 6));
+            }
+        } catch (error) {
+            console.error('프로필 데이터 로드 오류:', error);
+        }
+    }, []);
+
     useFocusEffect(
         React.useCallback(() => {
-            (async () => {
-                try {
-                    const stored = await AsyncStorage.getItem('friends_list');
-                    if (stored) {
-                        const list = JSON.parse(stored) as Array<{ id: number; name: string }>;
-                        const sortedList = sortFriendsByName(list);
-                        setFriendsData(sortedList.slice(0, 6));
-                    }
-                } catch {}
-            })();
-        }, [])
+            loadProfileData();
+        }, [loadProfileData])
     );
 
     const [showProfileModal, setShowProfileModal] = React.useState(false);
@@ -97,8 +120,8 @@ export default function ProfileScreen() {
                             <Ionicons name="person" size={40} color="white" />
                         </View>
                         <View style={styles.profileInfo}>
-                            <Text style={styles.userName}>홍길동</Text>
-                            <Text style={styles.userLocation}>경기도</Text>
+                            <Text style={styles.userName}>{userName}</Text>
+                            <Text style={styles.userLocation}>{userLocation}{userAge ? ` · ${userAge}세` : ''}</Text>
                             <View style={styles.userStats}>
                                 <View style={styles.statItem}>
                                     <AntDesign name="heart" size={16} color="#E53935" />

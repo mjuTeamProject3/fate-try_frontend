@@ -136,69 +136,125 @@ export default function SignupAdditionalScreen() {
         setIsSubmitting(true);
 
         try {
-            // Access Token 확인
-            const accessToken = await AsyncStorage.getItem('accessToken');
-            if (!accessToken) {
-                Alert.alert('오류', '로그인이 필요합니다. 다시 로그인해주세요.');
-                router.replace('/login');
-                return;
+            // 생년월일로부터 나이 계산
+            let calculatedAge = '';
+            if (birthDate) {
+                try {
+                    const [year, month, day] = birthDate.split('-').map(Number);
+                    const today = new Date();
+                    const birth = new Date(year, month - 1, day);
+                    const age = today.getFullYear() - birth.getFullYear() - 
+                               (today.getMonth() < birth.getMonth() || 
+                                (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate()) ? 1 : 0);
+                    calculatedAge = age.toString();
+                } catch (error) {
+                    console.error('나이 계산 오류:', error);
+                }
             }
 
-            // 백엔드 API로 프로필 업데이트
-            const { USER_ENDPOINTS } = await import('@/constants/api');
-            const response = await fetch(USER_ENDPOINTS.profile, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({
-                    username: nickname,
-                    birthdate: birthDate,
-                    location: region,
-                    gender: gender === 'male' ? '남성' : '여성',
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error('프로필 업데이트 오류:', errorData);
-                throw new Error(errorData.error?.reason || '프로필 업데이트 실패');
-            }
-
-            const data = await response.json();
-            console.log('✅ 프로필 업데이트 성공:', data);
-
-            // 로컬 스토리지에도 저장 (오프라인 대비)
-            await AsyncStorage.setItem('userNickname', nickname);
-            await AsyncStorage.setItem('userBirthDate', birthDate);
-            await AsyncStorage.setItem('userRegion', region);
-            await AsyncStorage.setItem('userGender', gender);
+            // 먼저 로컬 스토리지에 저장 (DB 연결 없이도 즉시 반영)
+            await AsyncStorage.multiSet([
+                ['userNickname', nickname],
+                ['userBirthDate', birthDate],
+                ['userAge', calculatedAge],
+                ['userRegion', region],
+                ['userGender', gender],
+            ]);
             
             // 회원가입 완료 플래그 저장 (홈 화면에서 체크 건너뛰기)
             await AsyncStorage.setItem('hasCheckedSignup', 'true');
+            
+            console.log('✅ 로컬 저장 완료');
 
-            Alert.alert('회원가입 완료', '추가 정보가 성공적으로 등록되었습니다.', [
-                {
-                    text: '확인',
-                    onPress: () => {
-                        router.replace('/(tabs)');
+            // Access Token 확인 (실제 로그인 상태인지)
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            const loginStatus = await AsyncStorage.getItem('isLoggedIn');
+            
+            const isValidRealToken = accessToken !== null && 
+                                   accessToken !== '' &&
+                                   accessToken !== 'temp_token' && 
+                                   !accessToken.startsWith('temp_login_token_') &&
+                                   !accessToken.startsWith('dev_temp_token_') &&
+                                   !accessToken.startsWith('temp_');
+
+            // 실제 로그인 상태면 서버에도 저장 시도 (실패해도 로컬에는 저장됨)
+            if (loginStatus === 'true' && isValidRealToken && accessToken) {
+                try {
+                    const { USER_ENDPOINTS } = await import('@/constants/api');
+                    const response = await fetch(USER_ENDPOINTS.profile, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`,
+                        },
+                        body: JSON.stringify({
+                            username: nickname,
+                            birthdate: birthDate,
+                            location: region,
+                            gender: gender === 'male' ? '남성' : gender === 'female' ? '여성' : '기타',
+                        }),
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('✅ 서버 저장 성공:', data);
+                    } else {
+                        console.warn('⚠️ 서버 저장 실패, 로컬에만 저장됨');
                     }
+                } catch (error) {
+                    console.warn('⚠️ 서버 저장 오류, 로컬에만 저장됨:', error);
                 }
-            ]);
+            } else {
+                console.log('ℹ️ 개발자 진입 모드, 로컬에만 저장됨');
+            }
+
+            // 저장 완료 후 홈 화면으로 이동
+            console.log('✅ 정보 저장 완료, 홈 화면으로 이동');
+            router.replace('/(tabs)');
         } catch (error) {
             console.error('회원가입 정보 저장 오류:', error);
-            Alert.alert('오류', error.message || '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.');
+            Alert.alert('오류', '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    // 뒤로가기 핸들러
+    const handleBack = async () => {
+        try {
+            console.log('뒤로가기 버튼 클릭, 로그인 화면으로 이동');
+            // 모든 로그인 관련 데이터 초기화
+            await AsyncStorage.multiRemove([
+                'accessToken',
+                'refreshToken',
+                'loginProvider',
+                'isLoggedIn',
+                'hasCheckedSignup',
+                'tempSkipSignup',
+            ]);
+            router.replace('/login');
+        } catch (error) {
+            console.error('뒤로가기 오류:', error);
+            router.replace('/login');
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>추가 정보 입력</Text>
-                <Text style={styles.headerSubtitle}>서비스를 이용하기 위해 추가 정보가 필요합니다</Text>
+            {/* 헤더에 뒤로가기 버튼 추가 */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: '#fff' }}>
+                <TouchableOpacity 
+                    onPress={handleBack}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={{ paddingRight: 12, paddingVertical: 4, paddingLeft: 4 }}
+                >
+                    <Ionicons name="arrow-back" size={24} color="#333" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '600', color: '#333' }}>추가 정보 입력</Text>
+                    <Text style={{ fontSize: 12, color: '#666', marginTop: 2 }}>서비스를 이용하기 위해 추가 정보가 필요합니다</Text>
+                </View>
             </View>
 
             <ScrollView 
@@ -359,9 +415,15 @@ export default function SignupAdditionalScreen() {
                 <TouchableOpacity
                     style={styles.tempSkipButton}
                     onPress={async () => {
-                        // 개발 중: 임시 스킵 플래그 설정 (홈 화면에서 체크 건너뛰기)
-                        await AsyncStorage.setItem('tempSkipSignup', 'true');
-                        router.replace('/(tabs)');
+                        try {
+                            // 개발 중: 임시 스킵 플래그 설정 (홈 화면에서 체크 건너뛰기)
+                            await AsyncStorage.setItem('tempSkipSignup', 'true');
+                            await AsyncStorage.setItem('hasCheckedSignup', 'true');
+                            console.log('✅ 개발용: 홈 화면으로 이동');
+                            router.replace('/(tabs)');
+                        } catch (error) {
+                            console.error('홈 화면 이동 오류:', error);
+                        }
                     }}
                 >
                     <Text style={styles.tempSkipButtonText}>개발용: 홈 화면으로 이동</Text>

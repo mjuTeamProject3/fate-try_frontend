@@ -1,9 +1,69 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView, TextInput, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, SafeAreaView, TextInput, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '@/constants/api';
+
+interface UserProfile {
+    email?: string;
+    createdAt?: string;
+}
 
 export default function AccountScreen() {
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+    const [isRealLogin, setIsRealLogin] = useState<boolean>(false);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    // 사용자 프로필 정보 가져오기
+    useEffect(() => {
+        const loadUserProfile = async () => {
+            try {
+                const loginStatus = await AsyncStorage.getItem('isLoggedIn');
+                const accessToken = await AsyncStorage.getItem('accessToken');
+                
+                // 실제 유효한 토큰인지 확인 (임시 토큰 제외)
+                const isValidRealToken = accessToken !== null && 
+                                       accessToken !== '' &&
+                                       accessToken !== 'temp_token' && 
+                                       !accessToken.startsWith('temp_login_token_') &&
+                                       !accessToken.startsWith('dev_temp_token_') &&
+                                       !accessToken.startsWith('temp_');
+                
+                const isReal = loginStatus === 'true' && isValidRealToken;
+                setIsRealLogin(isReal);
+
+                if (isReal && accessToken) {
+                    // 서버에서 사용자 프로필 정보 가져오기
+                    const response = await fetch(`${API_BASE_URL}/user`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            setUserProfile({
+                                email: data.success.email || '',
+                                createdAt: data.success.createdAt || '',
+                            });
+                        }
+                    } else {
+                        console.error('프로필 정보 가져오기 실패:', response.status);
+                    }
+                }
+            } catch (error) {
+                console.error('프로필 정보 로드 오류:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadUserProfile();
+    }, []);
 
     const changePassword = () => {
         Alert.alert('안내', '비밀번호 변경 플로우를 연결해주세요.');
@@ -24,6 +84,20 @@ export default function AccountScreen() {
         ]);
     };
 
+    // 가입일 포맷팅
+    const formatDate = (dateString?: string) => {
+        if (!dateString) return '정보 없음';
+        try {
+            const date = new Date(dateString);
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            return `${year}년 ${month}월 ${day}일`;
+        } catch (error) {
+            return '정보 없음';
+        }
+    };
+
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
@@ -34,18 +108,41 @@ export default function AccountScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-
-                {/* 계정 정보 */}
-                <Card title="계정 정보" icon="shield-checkmark-outline">
-                    <RowKeyValue icon="mail-outline" label="이메일" value="user@example.com" badge="인증됨" />
-                    <Separator />
-                    <RowKeyValue icon="call-outline" label="전화번호" value="010-****-1234" badge="인증됨" />
-                    <Separator />
-                    <RowKeyValue icon="calendar-outline" label="가입일" value="2024년 1월 1일" />
-                    <TouchableOpacity onPress={changePassword} style={{ marginTop: 12, borderWidth: 1, borderColor: '#eee', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}>
-                        <Text style={{ color: '#333' }}>비밀번호 변경</Text>
-                    </TouchableOpacity>
-                </Card>
+                {isLoading ? (
+                    <View style={{ padding: 40, alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color="#4CAF50" />
+                    </View>
+                ) : (
+                    <>
+                        {/* 계정 정보 */}
+                        <Card title="계정 정보" icon="shield-checkmark-outline">
+                            <RowKeyValue 
+                                icon="mail-outline" 
+                                label="이메일" 
+                                value={isRealLogin && userProfile?.email ? userProfile.email : '정보 없음'} 
+                                badge={isRealLogin ? "인증됨" : "인증 안됨"}
+                                badgeColor={isRealLogin ? "#25a244" : "#E53935"}
+                            />
+                            <Separator />
+                            <RowKeyValue 
+                                icon="call-outline" 
+                                label="전화번호" 
+                                value="010-****-1234" 
+                                badge="인증 안됨"
+                                badgeColor="#E53935"
+                            />
+                            <Separator />
+                            <RowKeyValue 
+                                icon="calendar-outline" 
+                                label="가입일" 
+                                value={isRealLogin && userProfile?.createdAt ? formatDate(userProfile.createdAt) : '정보 없음'} 
+                            />
+                            <TouchableOpacity onPress={changePassword} style={{ marginTop: 12, borderWidth: 1, borderColor: '#eee', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}>
+                                <Text style={{ color: '#333' }}>비밀번호 변경</Text>
+                            </TouchableOpacity>
+                        </Card>
+                    </>
+                )}
 
                 {/* 활동 통계 */}
                 <Card title="활동 통계" icon="card-outline">
@@ -92,7 +189,7 @@ function LabeledInput({ label, value, onChangeText, keyboardType }: { label: str
     );
 }
 
-function RowKeyValue({ icon, label, value, badge }: { icon: any; label: string; value: string; badge?: string }) {
+function RowKeyValue({ icon, label, value, badge, badgeColor = '#25a244' }: { icon: any; label: string; value: string; badge?: string; badgeColor?: string }) {
     return (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -102,7 +199,7 @@ function RowKeyValue({ icon, label, value, badge }: { icon: any; label: string; 
                     <Text style={{ color: '#777', fontSize: 12 }}>{value}</Text>
                 </View>
             </View>
-            {badge ? <View style={{ backgroundColor: '#25a244', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{badge}</Text></View> : null}
+            {badge ? <View style={{ backgroundColor: badgeColor, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{badge}</Text></View> : null}
         </View>
     );
 }

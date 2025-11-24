@@ -116,15 +116,16 @@ export default function LoginScreen() {
         }
     };
 
-    // 임시로 홈 화면으로 이동하는 함수
+    // 임시로 소셜 로그인 성공 처리 함수
     const handleTempLogin = async () => {
         try {
-            // 임시 로그인 상태 설정 (temp_token이 아닌 다른 값 사용)
+            // 임시 로그인 상태 설정 (유효한 토큰처럼 보이게 하되, 실제로는 임시)
+            // 상세정보 입력 화면으로 이동하기 위해 로그인 상태만 설정
             await AsyncStorage.setItem('isLoggedIn', 'true');
-            await AsyncStorage.setItem('accessToken', 'temp_login_token_' + Date.now());
+            await AsyncStorage.setItem('accessToken', 'dev_temp_token_' + Date.now());
             await AsyncStorage.setItem('loginProvider', 'temp');
             
-            // 개발 중: 항상 추가정보 페이지로 이동 (기록 저장하지 않음)
+            // 상세정보 입력 페이지로 이동
             router.replace('/signup-additional');
         } catch (error) {
             console.error('임시 로그인 오류:', error);
@@ -212,12 +213,12 @@ export default function LoginScreen() {
                     )}
                 </View>
 
-                {/* 임시 홈 화면 이동 버튼 (최종 제거 예정) */}
+                {/* 임시 소셜 로그인 성공 버튼 (개발용) */}
                 <TouchableOpacity 
                     style={styles.tempButton}
                     onPress={handleTempLogin}
                 >
-                    <Text style={styles.tempButtonText}>임시로 홈 화면 이동</Text>
+                    <Text style={styles.tempButtonText}>임시로 소셜로그인 성공</Text>
                 </TouchableOpacity>
             </View>
 

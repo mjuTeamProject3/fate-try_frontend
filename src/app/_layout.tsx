@@ -61,8 +61,33 @@ function RootLayoutNav() {
     try {
       const loginStatus = await AsyncStorage.getItem('isLoggedIn');
       const accessToken = await AsyncStorage.getItem('accessToken');
-      // 임시 토큰은 무시 (개발 중 임시 버튼으로 저장된 경우)
-      const loggedIn = loginStatus === 'true' && accessToken !== null && accessToken !== 'temp_token';
+      
+      // 토큰이 없거나 유효하지 않으면 로그인되지 않은 것으로 처리
+      // 임시 토큰들 모두 무시 (dev_temp_token_은 개발용으로 허용)
+      const isValidToken = accessToken !== null && 
+                          accessToken !== '' &&
+                          accessToken !== 'temp_token' && 
+                          !accessToken.startsWith('temp_login_token_') &&
+                          (accessToken.startsWith('dev_temp_token_') || !accessToken.startsWith('temp_'));
+      
+      const loggedIn = loginStatus === 'true' && isValidToken;
+      
+      // 로그인되지 않은 경우 모든 로그인 관련 데이터 초기화
+      if (!loggedIn) {
+        await AsyncStorage.multiRemove([
+          'isLoggedIn',
+          'accessToken',
+          'refreshToken',
+          'loginProvider',
+          'hasCheckedSignup',
+          'tempSkipSignup',
+          'userNickname',
+          'userBirthDate',
+          'userRegion',
+          'userGender'
+        ]);
+      }
+      
       setIsLoggedIn(loggedIn);
       return loggedIn;
     } catch (error) {
@@ -123,14 +148,20 @@ function RootLayoutNav() {
   // 초기 로그인 상태 확인 및 Deep linking 설정
   useEffect(() => {
     (async () => {
-      await checkLoginStatus();
-      setIsInitialized(true);
+      const loggedIn = await checkLoginStatus();
       
       // 초기 URL 확인 (앱이 이미 열려있을 때)
       const initialUrl = await Linking.getInitialURL();
       if (initialUrl) {
         await handleDeepLink(initialUrl);
+      } else if (!loggedIn) {
+        // 로그인되지 않았고 Deep link도 없으면 무조건 로그인 화면으로 이동
+        console.log('🚫 로그인되지 않음, 로그인 화면으로 이동');
+        router.replace('/login');
       }
+      
+      // 초기화 완료 표시 (라우팅 후에 설정)
+      setIsInitialized(true);
       
       // Deep link 리스너 등록
       const subscription = Linking.addEventListener('url', (event) => {
@@ -150,19 +181,44 @@ function RootLayoutNav() {
     }
   }, [segments]);
 
-  // 로그인 상태에 따라 라우팅 (초기 마운트 제외)
+  // 로그인 상태에 따라 라우팅
   useEffect(() => {
     if (!isInitialized || isLoggedIn === null) return; // 초기화 전이거나 로그인 상태 확인 중
 
     const inAuthGroup = segments[0] === '(tabs)';
     const isLoginScreen = segments[0] === 'login';
+    const isSignupScreen = segments[0] === 'signup-additional';
 
-    if (!isLoggedIn && inAuthGroup) {
-      // 로그인되지 않았는데 탭 화면에 있으면 로그인 화면으로 이동
-      router.replace('/login');
+    // 로그인되지 않은 경우 - 무조건 로그인 화면으로
+    if (!isLoggedIn) {
+      if (!isLoginScreen) {
+        console.log('🚫 로그인되지 않음, 로그인 화면으로 강제 이동');
+        router.replace('/login');
+      }
+    } else {
+      // 로그인된 경우
+      // 로그인 화면에 있으면 홈 화면으로 이동
+      if (isLoginScreen) {
+        // 추가 정보 입력이 필요한지 확인 (비동기)
+        (async () => {
+          try {
+            const hasCheckedSignup = await AsyncStorage.getItem('hasCheckedSignup');
+            const tempSkipSignup = await AsyncStorage.getItem('tempSkipSignup');
+            
+            // 추가 정보 입력이 필요하면 signup-additional로, 아니면 홈으로
+            if (!hasCheckedSignup && !tempSkipSignup) {
+              // 백엔드에서 프로필 완성도 확인 필요 (현재는 홈으로 이동)
+              router.replace('/(tabs)');
+            } else {
+              router.replace('/(tabs)');
+            }
+          } catch (error) {
+            console.error('스토리지 확인 오류:', error);
+            router.replace('/(tabs)');
+          }
+        })();
+      }
     }
-    // 로그인되어 있어도 초기 마운트 시에는 로그인 화면에 머물도록 함
-    // 사용자가 직접 로그인하거나 임시 버튼을 눌러야만 홈으로 이동
   }, [isLoggedIn, segments, isInitialized]);
 
   useEffect(() => {
@@ -195,8 +251,9 @@ function RootLayoutNav() {
 
   const theme = (override ?? systemScheme) === 'dark' ? DarkTheme : DefaultTheme;
 
-  // 초기화 전에는 아무것도 렌더링하지 않음
+  // 초기화 전에는 로딩 화면 표시
   if (!isInitialized) {
+    // 초기화 중에는 아무것도 렌더링하지 않음 (SplashScreen이 표시됨)
     return null;
   }
 
@@ -207,6 +264,7 @@ function RootLayoutNav() {
             각 화면에서 커스텀 헤더를 직접 그릴 수 있도록 설정 */}
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="login" />
+          <Stack.Screen name="signup-additional" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>
