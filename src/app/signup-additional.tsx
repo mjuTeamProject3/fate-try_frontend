@@ -188,7 +188,8 @@ export default function SignupAdditionalScreen() {
             ]);
         } catch (error) {
             console.error('회원가입 정보 저장 오류:', error);
-            Alert.alert('오류', error.message || '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.');
+            const errorMessage = error instanceof Error ? error.message : '정보 저장 중 문제가 발생했습니다. 다시 시도해주세요.';
+            Alert.alert('오류', errorMessage);
         } finally {
             setIsSubmitting(false);
         }

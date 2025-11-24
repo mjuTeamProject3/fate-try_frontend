@@ -10,6 +10,7 @@ import * as Linking from 'expo-linking';
 import { useColorScheme } from '@/components/useColorScheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { I18nProvider } from '@/contexts/i18nContext';
+import { API_BASE_URL } from '@/constants/api';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -56,15 +57,72 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
 
-  // 로그인 상태 확인 함수
+  // 로그인 상태 확인 함수 (토큰 검증 및 refresh 포함)
   const checkLoginStatus = async () => {
     try {
-      const loginStatus = await AsyncStorage.getItem('isLoggedIn');
       const accessToken = await AsyncStorage.getItem('accessToken');
-      // 임시 토큰은 무시 (개발 중 임시 버튼으로 저장된 경우)
-      const loggedIn = loginStatus === 'true' && accessToken !== null && accessToken !== 'temp_token';
-      setIsLoggedIn(loggedIn);
-      return loggedIn;
+      
+      // 1. 토큰이 없거나 임시 토큰이면 로그인 화면으로
+      if (!accessToken || accessToken.startsWith('temp_')) {
+        setIsLoggedIn(false);
+        return false;
+      }
+      
+      // 2. 서버에 토큰 유효성 검증
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/protected`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (response.ok) {
+          // 토큰 유효 → 로그인 상태 유지
+          setIsLoggedIn(true);
+          return true;
+        }
+      } catch (error) {
+        console.log('토큰 검증 실패, refresh 시도:', error);
+      }
+      
+      // 3. 토큰 만료 → refresh 시도
+      const refreshToken = await AsyncStorage.getItem('refreshToken');
+      if (refreshToken) {
+        try {
+          const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+          
+          if (refreshResponse.ok) {
+            const data = await refreshResponse.json();
+            // 새 토큰 저장
+            if (data.success?.accessToken && data.success?.refreshToken) {
+              await AsyncStorage.setItem('accessToken', data.success.accessToken);
+              await AsyncStorage.setItem('refreshToken', data.success.refreshToken);
+              await AsyncStorage.setItem('isLoggedIn', 'true');
+              
+              setIsLoggedIn(true);
+              return true;
+            }
+          }
+        } catch (error) {
+          console.error('Refresh 실패:', error);
+        }
+      }
+      
+      // 4. 모두 실패 → 로그아웃 처리
+      await AsyncStorage.removeItem('accessToken');
+      await AsyncStorage.removeItem('refreshToken');
+      await AsyncStorage.removeItem('isLoggedIn');
+      setIsLoggedIn(false);
+      return false;
+      
     } catch (error) {
       console.error('로그인 상태 확인 오류:', error);
       setIsLoggedIn(false);
@@ -123,8 +181,13 @@ function RootLayoutNav() {
   // 초기 로그인 상태 확인 및 Deep linking 설정
   useEffect(() => {
     (async () => {
-      await checkLoginStatus();
+      const isLoggedIn = await checkLoginStatus();
       setIsInitialized(true);
+      
+      // 로그인되어 있으면 홈으로 자동 이동
+      if (isLoggedIn) {
+        router.replace('/(tabs)');
+      }
       
       // 초기 URL 확인 (앱이 이미 열려있을 때)
       const initialUrl = await Linking.getInitialURL();
@@ -150,7 +213,7 @@ function RootLayoutNav() {
     }
   }, [segments]);
 
-  // 로그인 상태에 따라 라우팅 (초기 마운트 제외)
+  // 로그인 상태에 따라 라우팅
   useEffect(() => {
     if (!isInitialized || isLoggedIn === null) return; // 초기화 전이거나 로그인 상태 확인 중
 
@@ -160,9 +223,10 @@ function RootLayoutNav() {
     if (!isLoggedIn && inAuthGroup) {
       // 로그인되지 않았는데 탭 화면에 있으면 로그인 화면으로 이동
       router.replace('/login');
+    } else if (isLoggedIn && isLoginScreen) {
+      // 로그인되어 있는데 로그인 화면에 있으면 홈으로 이동
+      router.replace('/(tabs)');
     }
-    // 로그인되어 있어도 초기 마운트 시에는 로그인 화면에 머물도록 함
-    // 사용자가 직접 로그인하거나 임시 버튼을 눌러야만 홈으로 이동
   }, [isLoggedIn, segments, isInitialized]);
 
   useEffect(() => {

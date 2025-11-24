@@ -12,7 +12,7 @@ export default function ProfileMenuScreen() {
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
             <View style={{ 
                 flexDirection: 'row', 
                 alignItems: 'center', 

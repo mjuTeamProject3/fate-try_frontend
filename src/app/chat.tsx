@@ -86,7 +86,7 @@ export default function ChatScreen() {
     ];
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
+        <SafeAreaView style={styles.container}>
             {/* 헤더 */}
             <View style={styles.header}>
                 <TouchableOpacity 
