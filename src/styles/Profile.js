@@ -100,11 +100,11 @@ const styles = StyleSheet.create({
         borderWidth: 1, // 테두리 추가
         borderColor: '#4CAF50', // 녹색 테두리
         borderRadius: 15,
-        paddingHorizontal: 8, // 패딩 적절히 설정
+        paddingHorizontal: 12, // 패딩 증가
         paddingVertical: 6,
-        marginRight: 4, // 마진
+        marginRight: 8, // 마진 증가
         marginBottom: 8,
-        width: '23%', // 한 줄에 4개씩 표시되도록 고정 너비 설정 (23% * 4 = 92%, 나머지 8%는 간격)
+        alignSelf: 'flex-start', // 내용에 맞게 자동 너비 조정
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 30, // 최소 높이 설정

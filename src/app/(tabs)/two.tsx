@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, View, TouchableOpacity } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 // 스타일 임포트
 import styles from '@/styles/Profile';
@@ -7,33 +7,122 @@ import styles from '@/styles/Profile';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ImageModal from '@/components/ImageModal';
+import { API_BASE_URL, USER_ENDPOINTS, FRIEND_ENDPOINTS } from '@/constants/api';
+
+// 프로필 데이터 타입
+interface UserProfile {
+    userId: number;
+    username: string;
+    location: string | null;
+    avatar: string | null;
+    likesCount: number;
+    friendsCount: number;
+    sajuKeywords: string[] | null;
+}
+
+// 친구 데이터 타입
+interface Friend {
+    id: number;
+    username: string;
+    name: string;
+    avatar: string | null;
+    location: string | null;
+}
 
 export default function ProfileScreen() {
-    // 친구 목록 데이터 (저장된 값 기반)
-    const [friendsData, setFriendsData] = React.useState<{ id: number; name: string }[]>([]);
+    // 프로필 데이터 상태
+    const [profileData, setProfileData] = React.useState<UserProfile | null>(null);
+    const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
+    
+    // 친구 목록 데이터
+    const [friendsData, setFriendsData] = React.useState<Friend[]>([]);
+    const [isLoadingFriends, setIsLoadingFriends] = React.useState(false);
 
     // 친구 목록을 가나다 순으로 정렬하는 함수
-    const sortFriendsByName = (friendsList: { id: number; name: string }[]) => {
-        return friendsList.sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+    const sortFriendsByName = (friendsList: Friend[]) => {
+        return friendsList.sort((a, b) => (a.username || a.name).localeCompare((b.username || b.name), 'ko-KR'));
+    };
+
+    // 본인 프로필 조회
+    const fetchMyProfile = async () => {
+        try {
+            setIsLoadingProfile(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.error('Access Token이 없습니다.');
+                return;
+            }
+
+            const response = await fetch(USER_ENDPOINTS.getProfile, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('프로필 조회 실패');
+            }
+
+            const data = await response.json();
+            if (data.resultType === 'SUCCESS' && data.success) {
+                setProfileData(data.success);
+            }
+        } catch (error) {
+            console.error('프로필 조회 오류:', error);
+        } finally {
+            setIsLoadingProfile(false);
+        }
+    };
+
+    // 친구 목록 조회
+    const fetchFriendsList = async () => {
+        try {
+            setIsLoadingFriends(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.error('Access Token이 없습니다.');
+                return;
+            }
+
+            const response = await fetch(FRIEND_ENDPOINTS.getFriends, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('친구 목록 조회 실패');
+            }
+
+            const data = await response.json();
+            if (data.resultType === 'SUCCESS' && data.success?.friends) {
+                const sortedFriends = sortFriendsByName(data.success.friends);
+                setFriendsData(sortedFriends.slice(0, 6));
+            }
+        } catch (error) {
+            console.error('친구 목록 조회 오류:', error);
+            // 에러 발생 시 빈 배열로 설정
+            setFriendsData([]);
+        } finally {
+            setIsLoadingFriends(false);
+        }
     };
 
     useFocusEffect(
         React.useCallback(() => {
-            (async () => {
-                try {
-                    const stored = await AsyncStorage.getItem('friends_list');
-                    if (stored) {
-                        const list = JSON.parse(stored) as Array<{ id: number; name: string }>;
-                        const sortedList = sortFriendsByName(list);
-                        setFriendsData(sortedList.slice(0, 6));
-                    }
-                } catch {}
-            })();
+            fetchMyProfile();
+            fetchFriendsList();
         }, [])
     );
 
     const [showProfileModal, setShowProfileModal] = React.useState(false);
-    const [selectedFriend, setSelectedFriend] = React.useState<{ id: number; name: string } | null>(null);
+    const [selectedFriend, setSelectedFriend] = React.useState<Friend | null>(null);
+    const [selectedFriendProfile, setSelectedFriendProfile] = React.useState<UserProfile | null>(null);
+    const [isLoadingFriendProfile, setIsLoadingFriendProfile] = React.useState(false);
     const [isHeartLiked, setIsHeartLiked] = React.useState(false);
     const [isFriendAdded, setIsFriendAdded] = React.useState(true); // 친구목록에서는 이미 친구이므로 true
     const [showImageModal, setShowImageModal] = React.useState(false);
@@ -43,34 +132,49 @@ export default function ProfileScreen() {
     // 친구 프로필 모달의 키워드 펼침 상태
     const [friendKeywordsExpanded, setFriendKeywordsExpanded] = React.useState(false);
     
-    // 내 사주 키워드 (8개로 설정)
-    const myKeywords = [
-        '친근함', '신뢰', '유머', '열정', '성실함', '긍정', '창의성', '도전'
-    ];
-    
-    // 친구 키워드 가져오기 (고정된 키워드)
-    const getFriendKeywords = (friendName: string) => {
-        const allKeywords = ['사랑', '열정', '기쁨', '행복', '희망', '꿈', '자유', '평화', '건강', '부귀', '명예', '성공'];
-        
-        // 이름을 해시해서 고정된 키워드 가져오기
-        let hash = 0;
-        for (let i = 0; i < friendName.length; i++) {
-            hash = ((hash << 5) - hash) + friendName.charCodeAt(i);
-            hash = hash & hash;
+    // 타인 프로필 조회
+    const fetchFriendProfile = async (friendId: number) => {
+        try {
+            setIsLoadingFriendProfile(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.error('Access Token이 없습니다.');
+                return;
+            }
+
+            const response = await fetch(USER_ENDPOINTS.getProfileById(friendId), {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('프로필 조회 실패');
+            }
+
+            const data = await response.json();
+            if (data.resultType === 'SUCCESS' && data.success) {
+                setSelectedFriendProfile(data.success);
+            }
+        } catch (error) {
+            console.error('친구 프로필 조회 오류:', error);
+        } finally {
+            setIsLoadingFriendProfile(false);
         }
-        
-        const count = 8; // 친구는 8개
-        const startIdx = Math.abs(hash) % (allKeywords.length - count + 1);
-        return allKeywords.slice(startIdx, startIdx + count);
     };
 
-    const openFriend = (friend: { id: number; name: string }) => {
+    const openFriend = async (friend: Friend) => {
         setSelectedFriend(friend);
+        setSelectedFriendProfile(null);
         setIsHeartLiked(false); // 하트 상태 초기화
         setIsFriendAdded(true); // 친구 상태 초기화
         setKeywordsExpanded(false); // 키워드 펼침 상태 초기화 (내 프로필)
         setFriendKeywordsExpanded(false); // 친구 키워드 펼침 상태 초기화
         setShowProfileModal(true);
+        // 친구 프로필 조회
+        await fetchFriendProfile(friend.id);
     };
 
     const startChatWithSelected = () => {
@@ -97,18 +201,32 @@ export default function ProfileScreen() {
                             <Ionicons name="person" size={40} color="white" />
                         </View>
                         <View style={styles.profileInfo}>
-                            <Text style={styles.userName}>홍길동</Text>
-                            <Text style={styles.userLocation}>경기도</Text>
-                            <View style={styles.userStats}>
-                                <View style={styles.statItem}>
-                                    <AntDesign name="heart" size={16} color="#E53935" />
-                                    <Text style={styles.statText}>1,250</Text>
-                                </View>
-                                <View style={styles.statItem}>
-                                    <Ionicons name="person" size={16} color="#4CAF50" />
-                                    <Text style={styles.statText}>42</Text>
-                                </View>
-                            </View>
+                            {isLoadingProfile ? (
+                                <ActivityIndicator size="small" color="#4CAF50" />
+                            ) : (
+                                <>
+                                    <Text style={styles.userName}>
+                                        {profileData?.username || '사용자'}
+                                    </Text>
+                                    <Text style={styles.userLocation}>
+                                        {profileData?.location || '지역 미설정'}
+                                    </Text>
+                                    <View style={styles.userStats}>
+                                        <View style={styles.statItem}>
+                                            <AntDesign name="heart" size={16} color="#E53935" />
+                                            <Text style={styles.statText}>
+                                                {profileData?.likesCount?.toLocaleString() || '0'}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.statItem}>
+                                            <Ionicons name="person" size={16} color="#4CAF50" />
+                                            <Text style={styles.statText}>
+                                                {profileData?.friendsCount || '0'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </>
+                            )}
                         </View>
                         <TouchableOpacity onPress={() => router.push('/profile-edit')}>
                             <Ionicons name="create-outline" size={24} color="#333" />
@@ -116,35 +234,37 @@ export default function ProfileScreen() {
                     </View>
                     
                     {/* 사주 키워드 - 프로필 카드 전체 너비로 확장 */}
-                    <View style={{ width: '100%', marginTop: 15 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333' }}>사주 키워드</Text>
-                            {myKeywords.length > 4 && (
-                                <TouchableOpacity 
-                                    onPress={() => setKeywordsExpanded(!keywordsExpanded)}
-                                    style={{ marginLeft: 'auto', paddingLeft: 8 }}
-                                >
-                                    <Ionicons 
-                                        name={keywordsExpanded ? "chevron-up" : "chevron-down"} 
-                                        size={20} 
-                                        color="#4CAF50" 
-                                    />
-                                </TouchableOpacity>
-                            )}
+                    {profileData?.sajuKeywords && profileData.sajuKeywords.length > 0 && (
+                        <View style={{ width: '100%', marginTop: 15 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#333' }}>사주 키워드</Text>
+                                {profileData.sajuKeywords.length > 4 && (
+                                    <TouchableOpacity 
+                                        onPress={() => setKeywordsExpanded(!keywordsExpanded)}
+                                        style={{ marginLeft: 'auto', paddingLeft: 8 }}
+                                    >
+                                        <Ionicons 
+                                            name={keywordsExpanded ? "chevron-up" : "chevron-down"} 
+                                            size={20} 
+                                            color="#4CAF50" 
+                                        />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                            <View style={styles.tagsContainer}>
+                                {(() => {
+                                    const displayCount = keywordsExpanded ? profileData.sajuKeywords.length : Math.min(profileData.sajuKeywords.length, 4);
+                                    const keywordsToShow = profileData.sajuKeywords.slice(0, displayCount);
+                                    
+                                    return keywordsToShow.map((keyword, index) => (
+                                        <View key={index} style={styles.tag}>
+                                            <Text style={styles.tagText} numberOfLines={1}>{keyword}</Text>
+                                        </View>
+                                    ));
+                                })()}
+                            </View>
                         </View>
-                        <View style={styles.tagsContainer}>
-                            {(() => {
-                                const displayCount = keywordsExpanded ? myKeywords.length : Math.min(myKeywords.length, 4);
-                                const keywordsToShow = myKeywords.slice(0, displayCount);
-                                
-                                return keywordsToShow.map((keyword, index) => (
-                                    <View key={index} style={styles.tag}>
-                                        <Text style={styles.tagText} numberOfLines={1}>{keyword}</Text>
-                                    </View>
-                                ));
-                            })()}
-                        </View>
-                    </View>
+                    )}
                 </View>
 
                 {/* 친구 목록 섹션 */}
@@ -165,14 +285,22 @@ export default function ProfileScreen() {
                         nestedScrollEnabled={true}
                     >
                         <View style={styles.friendsGrid}>
-                            {friendsData.map((friend) => (
-                                <TouchableOpacity key={friend.id} style={styles.friendItem} onPress={() => openFriend(friend)}>
-                                    <View style={styles.friendAvatar}>
-                                        <Ionicons name="person" size={24} color="white" />
-                                    </View>
-                                    <Text style={styles.friendName}>{friend.name}</Text>
-                                </TouchableOpacity>
-                            ))}
+                            {isLoadingFriends ? (
+                                <ActivityIndicator size="small" color="#4CAF50" style={{ marginTop: 20 }} />
+                            ) : friendsData.length > 0 ? (
+                                friendsData.map((friend) => (
+                                    <TouchableOpacity key={friend.id} style={styles.friendItem} onPress={() => openFriend(friend)}>
+                                        <View style={styles.friendAvatar}>
+                                            <Ionicons name="person" size={24} color="white" />
+                                        </View>
+                                        <Text style={styles.friendName}>{friend.username || friend.name}</Text>
+                                    </TouchableOpacity>
+                                ))
+                            ) : (
+                                <Text style={{ textAlign: 'center', color: '#999', marginTop: 20 }}>
+                                    친구가 없습니다
+                                </Text>
+                            )}
                         </View>
                     </ScrollView>
                 </View>
@@ -244,89 +372,104 @@ export default function ProfileScreen() {
                         </View>
                         
                         <View style={{ padding: 20, alignItems: 'center' }}>
-                            {/* 프로필 아바타 */}
-                            <TouchableOpacity 
-                                style={{
-                                    width: 100,
-                                    height: 100,
-                                    borderRadius: 50,
-                                    backgroundColor: '#4CAF50',
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    marginBottom: 15,
-                                }}
-                                onPress={() => setShowImageModal(true)}
-                            >
-                                <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>
-                                    {selectedFriend.name.substring(0, 2)}
-                                </Text>
-                            </TouchableOpacity>
-                            
-                            {/* 사용자 정보 */}
-                            <Text style={{
-                                fontSize: 24,
-                                fontWeight: 'bold',
-                                color: '#333',
-                                marginBottom: 5,
-                            }}>
-                                {selectedFriend.name}
-                            </Text>
-                            <Text style={{
-                                fontSize: 16,
-                                color: '#666',
-                                marginBottom: 15,
-                            }}>서울시 · 24세</Text>
-                            
-                            {/* 하트 수 */}
-                            <View style={{ flexDirection: 'row', marginBottom: 20 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
-                                    <AntDesign name="heart" size={16} color="#E53935" />
+                            {isLoadingFriendProfile ? (
+                                <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 50 }} />
+                            ) : selectedFriendProfile ? (
+                                <>
+                                    {/* 프로필 아바타 */}
+                                    <TouchableOpacity 
+                                        style={{
+                                            width: 100,
+                                            height: 100,
+                                            borderRadius: 50,
+                                            backgroundColor: '#4CAF50',
+                                            justifyContent: 'center',
+                                            alignItems: 'center',
+                                            marginBottom: 15,
+                                        }}
+                                        onPress={() => setShowImageModal(true)}
+                                    >
+                                        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>
+                                            {(selectedFriendProfile.username || selectedFriend?.name || '친구').substring(0, 2)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    
+                                    {/* 사용자 정보 */}
                                     <Text style={{
-                                        fontSize: 16,
+                                        fontSize: 24,
                                         fontWeight: 'bold',
                                         color: '#333',
-                                        marginLeft: 5,
-                                    }}>1,245</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
-                                    <Ionicons name="person" size={16} color="#4CAF50" />
+                                        marginBottom: 5,
+                                    }}>
+                                        {selectedFriendProfile.username || selectedFriend?.name || '친구'}
+                                    </Text>
                                     <Text style={{
                                         fontSize: 16,
-                                        fontWeight: 'bold',
-                                        color: '#333',
-                                        marginLeft: 5,
-                                    }}>89</Text>
-                                </View>
-                            </View>
+                                        color: '#666',
+                                        marginBottom: 15,
+                                    }}>
+                                        {selectedFriendProfile.location || '지역 미설정'}
+                                    </Text>
+                                    
+                                    {/* 하트 수 */}
+                                    <View style={{ flexDirection: 'row', marginBottom: 20 }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
+                                            <AntDesign name="heart" size={16} color="#E53935" />
+                                            <Text style={{
+                                                fontSize: 16,
+                                                fontWeight: 'bold',
+                                                color: '#333',
+                                                marginLeft: 5,
+                                            }}>
+                                                {selectedFriendProfile.likesCount?.toLocaleString() || '0'}
+                                            </Text>
+                                        </View>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
+                                            <Ionicons name="person" size={16} color="#4CAF50" />
+                                            <Text style={{
+                                                fontSize: 16,
+                                                fontWeight: 'bold',
+                                                color: '#333',
+                                                marginLeft: 5,
+                                            }}>
+                                                {selectedFriendProfile.friendsCount || '0'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </>
+                            ) : (
+                                <Text style={{ color: '#999', marginTop: 50 }}>프로필 정보를 불러올 수 없습니다</Text>
+                            )}
                             
                             {/* 자기소개 */}
-                            <View style={{ width: '100%', marginBottom: 20 }}>
-                                <Text style={{
-                                    fontSize: 18,
-                                    fontWeight: 'bold',
-                                    color: '#333',
-                                    marginBottom: 10,
-                                }}>자기소개</Text>
-                                <Text style={{
-                                    fontSize: 14,
-                                    color: '#666',
-                                    lineHeight: 20,
-                                }}>
-                                    안녕하세요! {selectedFriend.name}입니다 ✨ 좋은 사람들과 함께 즐거운 대화 나누고 싶습니다. 많이 친해져요!
-                                </Text>
-                            </View>
-                            
-                            {/* 사주 키워드 */}
-                            <View style={{ width: '100%', marginBottom: 20 }}>
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            {selectedFriendProfile && (
+                                <View style={{ width: '100%', marginBottom: 20 }}>
                                     <Text style={{
                                         fontSize: 18,
                                         fontWeight: 'bold',
                                         color: '#333',
-                                    }}>사주 키워드</Text>
-                                    {(() => {
-                                        const friendKeywords = selectedFriend ? getFriendKeywords(selectedFriend.name) : [];
-                                        return friendKeywords.length > 4 ? (
+                                        marginBottom: 10,
+                                    }}>자기소개</Text>
+                                    <Text style={{
+                                        fontSize: 14,
+                                        color: '#666',
+                                        lineHeight: 20,
+                                    }}>
+                                        안녕하세요! {selectedFriendProfile.username || selectedFriend?.name || '친구'}입니다 ✨ 좋은 사람들과 함께 즐거운 대화 나누고 싶습니다. 많이 친해져요!
+                                    </Text>
+                                </View>
+                            )}
+                            
+                            {/* 사주 키워드 */}
+                            {selectedFriendProfile?.sajuKeywords && selectedFriendProfile.sajuKeywords.length > 0 && (
+                                <View style={{ width: '100%', marginBottom: 20 }}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                        <Text style={{
+                                            fontSize: 18,
+                                            fontWeight: 'bold',
+                                            color: '#333',
+                                        }}>사주 키워드</Text>
+                                        {selectedFriendProfile.sajuKeywords.length > 4 && (
                                             <TouchableOpacity 
                                                 onPress={() => setFriendKeywordsExpanded(!friendKeywordsExpanded)}
                                             >
@@ -336,38 +479,38 @@ export default function ProfileScreen() {
                                                     color="#4CAF50" 
                                                 />
                                             </TouchableOpacity>
-                                        ) : null;
-                                    })()}
-                                </View>
-                                <View style={{ width: '100%' }}>
-                                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                                        {(() => {
-                                            const friendKeywords = selectedFriend ? getFriendKeywords(selectedFriend.name) : [];
-                                            const displayCount = friendKeywordsExpanded ? friendKeywords.length : 4;
-                                            const keywordsToShow = friendKeywords.slice(0, displayCount);
-                                            
-                                            return keywordsToShow.map((keyword, index) => (
-                                                <View key={index} style={{
-                                                    backgroundColor: '#fff',
-                                                    borderWidth: 1,
-                                                    borderColor: '#4CAF50',
-                                                    borderRadius: 15,
-                                                    paddingHorizontal: 12,
-                                                    paddingVertical: 6,
-                                                    marginRight: 8,
-                                                    marginBottom: 8,
-                                                }}>
-                                                    <Text style={{
-                                                        fontSize: 14,
-                                                        color: '#4CAF50',
-                                                        fontWeight: '500',
-                                                    }}>{keyword}</Text>
-                                                </View>
-                                            ));
-                                        })()}
+                                        )}
+                                    </View>
+                                    <View style={{ width: '100%' }}>
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                                            {(() => {
+                                                const displayCount = friendKeywordsExpanded ? selectedFriendProfile.sajuKeywords.length : 4;
+                                                const keywordsToShow = selectedFriendProfile.sajuKeywords.slice(0, displayCount);
+                                                
+                                                return keywordsToShow.map((keyword, index) => (
+                                                    <View key={index} style={{
+                                                        backgroundColor: '#fff',
+                                                        borderWidth: 1,
+                                                        borderColor: '#4CAF50',
+                                                        borderRadius: 15,
+                                                        paddingHorizontal: 12,
+                                                        paddingVertical: 6,
+                                                        marginRight: 8,
+                                                        marginBottom: 8,
+                                                        alignSelf: 'flex-start', // 내용에 맞게 자동 너비 조정
+                                                    }}>
+                                                        <Text style={{
+                                                            fontSize: 14,
+                                                            color: '#4CAF50',
+                                                            fontWeight: '500',
+                                                        }}>{keyword}</Text>
+                                                    </View>
+                                                ));
+                                            })()}
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
+                            )}
                             
                             {/* 좋아요 및 친구 관련 버튼 */}
                             <View style={{
@@ -423,23 +566,11 @@ export default function ProfileScreen() {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                         }}
-                                        onPress={() => {
+                                        onPress={async () => {
+                                            if (!selectedFriend) return;
                                             setShowProfileModal(false);
-                                            // 친구 삭제 기능 (AsyncStorage에서 제거)
-                                            const removeFriend = async (friendId: number) => {
-                                                try {
-                                                    const stored = await AsyncStorage.getItem('friends_list');
-                                                    if (stored) {
-                                                        const friends = JSON.parse(stored);
-                                                        const updatedFriends = friends.filter((f: any) => f.id !== friendId);
-                                                        await AsyncStorage.setItem('friends_list', JSON.stringify(updatedFriends));
-                                                        setFriendsData(updatedFriends.slice(0, 6));
-                                                    }
-                                                } catch (error) {
-                                                    console.error('친구 삭제 실패:', error);
-                                                }
-                                            };
-                                            removeFriend(selectedFriend.id);
+                                            // 친구 목록 새로고침
+                                            await fetchFriendsList();
                                         }}
                                     >
                                         <Ionicons name="person-remove" size={20} color="#E53935" />
@@ -455,8 +586,8 @@ export default function ProfileScreen() {
             <ImageModal
                 visible={showImageModal}
                 onClose={() => setShowImageModal(false)}
-                imageUri={null}
-                userName={selectedFriend?.name || '친구'}
+                imageUri={selectedFriendProfile?.avatar || null}
+                userName={selectedFriendProfile?.username || selectedFriend?.name || '친구'}
             />
 
             {/* 랜덤 채팅/영상 선택 드롭다운 */}

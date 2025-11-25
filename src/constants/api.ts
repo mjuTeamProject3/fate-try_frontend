@@ -33,8 +33,18 @@ export const getUserLikeEndpoint = (userId: number) => `${API_BASE_URL}/user/${u
 
 // 사용자 프로필 엔드포인트
 export const USER_ENDPOINTS = {
-    profile: `${API_BASE_URL}/user/profile`,
+    getProfile: `${API_BASE_URL}/user`,  // 본인 프로필 조회
+    getProfileById: (userId: number) => `${API_BASE_URL}/user/${userId}`,  // 타인 프로필 조회
+    updateProfile: `${API_BASE_URL}/user/profile`,  // 프로필 업데이트
     like: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
     unlike: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
+};
+
+// 친구 목록 엔드포인트
+export const FRIEND_ENDPOINTS = {
+    getFriends: `${API_BASE_URL}/friend`,
+    request: (userId: number) => `${API_BASE_URL}/friend/request/${userId}`,
+    accept: (userId: number) => `${API_BASE_URL}/friend/accept/${userId}`,
+    decline: (userId: number) => `${API_BASE_URL}/friend/decline/${userId}`,
 };
 
