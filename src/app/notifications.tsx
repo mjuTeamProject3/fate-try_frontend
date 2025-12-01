@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, SafeAreaView, Modal, Image } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, SafeAreaView, Modal, Image, Alert, ActivityIndicator } from 'react-native';
 import { AntDesign, Ionicons, Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from '@/styles/NotificationStyles';
+import { FRIEND_ENDPOINTS, NOTIFICATION_ENDPOINTS, USER_ENDPOINTS } from '@/constants/api';
 
 // 알림 데이터 타입 정의
 interface NotificationItem {
@@ -15,6 +16,7 @@ interface NotificationItem {
     time: string;
     isRead: boolean;
     isOnline?: boolean;
+    userId?: number; // 친구 요청의 경우 요청한 사용자 ID
 }
 
 interface NotificationSection {
@@ -39,93 +41,212 @@ const NotificationScreen = () => {
     const [isFriendAdded, setIsFriendAdded] = useState(false);
     const [showImageModal, setShowImageModal] = useState(false);
     
-    const [friendRequests, setFriendRequests] = useState<NotificationItem[]>([
-        {
-            id: 1,
-            type: 'friend_request',
-            username: '햇살왕자',
-            avatarText: '햇살',
-            message: '친구 요청을 보냈습니다',
-            time: '5분 전',
-            isRead: false,
-            isOnline: true,
-        },
-        {
-            id: 2,
-            type: 'friend_request',
-            username: '별빛나래',
-            avatarText: '별빛',
-            message: '친구 요청을 보냈습니다',
-            time: '1시간 전',
-            isRead: false,
-            isOnline: true,
-        },
-    ]);
+    const [friendRequests, setFriendRequests] = useState<NotificationItem[]>([]);
+    const [otherNotifications, setOtherNotifications] = useState<NotificationItem[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
 
-    const [otherNotifications, setOtherNotifications] = useState<NotificationItem[]>([
-        {
-            id: 3,
-            type: 'heart',
-            username: '달빛소녀',
-            avatarText: '달빛',
-            message: '당신에게 하트를 눌렀습니다',
-            time: '2분 전',
-            isRead: false,
-            isOnline: true,
-        },
-        {
-            id: 4,
-            type: 'message',
-            username: '바람처럼',
-            avatarText: '바람',
-            message: '새로운 메시지를 보냈습니다',
-            time: '10분 전',
-            isRead: false,
-            isOnline: true,
-        },
-        {
-            id: 5,
-            type: 'heart',
-            username: '구름속에',
-            avatarText: '구름',
-            message: '당신에게 하트를 눌렀습니다',
-            time: '오후 11:30',
-            isRead: true,
-        },
-        {
-            id: 6,
-            type: 'message',
-            username: '파도소리',
-            avatarText: '파도',
-            message: '안녕하세요! 반가워요',
-            time: '오전 9:15',
-            isRead: true,
-        },
-        {
-            id: 7,
-            type: 'heart',
-            username: '꽃피는봄',
-            avatarText: '꽃피',
-            message: '당신에게 하트를 눌렀습니다',
-            time: '10월 25일',
-            isRead: true,
-        },
-        {
-            id: 8,
-            type: 'system',
-            username: 'fate:try',
-            avatarText: '',
-            message: '매주 월요일 이벤트가 시작되었습니다!',
-            time: '10월 23일',
-            isRead: true,
-        },
-    ]);
+    // 시간 포맷 함수
+    const formatTimeAgo = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return '방금 전';
+        if (diffMins < 60) return `${diffMins}분 전`;
+        if (diffHours < 24) return `${diffHours}시간 전`;
+        if (diffDays < 7) return `${diffDays}일 전`;
+        
+        // 일주일 이상이면 날짜 표시
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const hour = date.getHours();
+        const minute = date.getMinutes();
+        const ampm = hour < 12 ? '오전' : '오후';
+        const displayHour = hour % 12 || 12;
+        
+        if (diffDays < 30) {
+            return `${ampm} ${displayHour}:${minute.toString().padStart(2, '0')}`;
+        }
+        
+        return `${month}월 ${day}일`;
+    };
+
+    // 알림 메시지 생성 함수
+    const getNotificationMessage = (type: string, content: any) => {
+        switch (type) {
+            case 'like':
+                return '당신에게 하트를 눌렀습니다';
+            case 'message':
+                return typeof content === 'string' ? content : content?.message || '새로운 메시지를 보냈습니다';
+            case 'system':
+                return typeof content === 'string' ? content : content?.message || '시스템 알림';
+            case 'friend_request':
+                return '친구 요청을 보냈습니다';
+            default:
+                return '새로운 알림이 있습니다';
+        }
+    };
+
+    // 백엔드 API로 알림 조회
+    const fetchNotifications = async () => {
+        try {
+            setIsLoading(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.error('Access Token이 없습니다.');
+                return;
+            }
+
+            // 친구 요청 알림 조회 (processed=false)
+            const friendRequestsUrl = NOTIFICATION_ENDPOINTS.getNotifications({ type: 'friend_request', processed: false });
+            
+            const friendRequestsResponse = await fetch(
+                friendRequestsUrl,
+                {
+                    headers: { 
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    }
+                }
+            );
+            
+            if (friendRequestsResponse.ok) {
+                const responseData = await friendRequestsResponse.json();
+                
+                // 응답 형식 확인 및 배열 추출
+                const friendRequestsData = responseData.resultType === 'SUCCESS' 
+                    ? (responseData.success || [])
+                    : (Array.isArray(responseData) ? responseData : []);
+                
+                if (Array.isArray(friendRequestsData) && friendRequestsData.length > 0) {
+                    const formatted = friendRequestsData.map((notif: any) => ({
+                        id: notif.id,
+                        type: 'friend_request' as const,
+                        username: notif.fromUser?.username || notif.content?.username || notif.fromUser?.name || '알 수 없음',
+                        avatarText: (notif.fromUser?.username || notif.content?.username || notif.fromUser?.name || '알').substring(0, 2),
+                        message: '친구 요청을 보냈습니다',
+                        time: formatTimeAgo(notif.createdAt),
+                        isRead: notif.isRead,
+                        userId: notif.fromUser?.id || null,
+                    }));
+                    setFriendRequests(formatted);
+                } else {
+                    setFriendRequests([]);
+                }
+            } else {
+                // 에러 발생 시에만 상세 로그
+                const errorText = await friendRequestsResponse.text();
+                console.error('[알림] 친구 요청 알림 조회 실패:', friendRequestsResponse.status, errorText);
+                console.log('[알림] 에러 발생 시점의 URL:', friendRequestsUrl);
+            }
+
+            // 일반 알림 조회 (친구 요청 제외, 최신순)
+            const otherNotificationsUrl = NOTIFICATION_ENDPOINTS.getNotifications({ take: 50 });
+            
+            const otherNotificationsResponse = await fetch(
+                otherNotificationsUrl,
+                {
+                    headers: { 
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    }
+                }
+            );
+            
+            if (otherNotificationsResponse.ok) {
+                const responseData = await otherNotificationsResponse.json();
+                
+                // 응답 형식 확인 및 배열 추출
+                const otherNotificationsData = responseData.resultType === 'SUCCESS' 
+                    ? (responseData.success || [])
+                    : (Array.isArray(responseData) ? responseData : []);
+                
+                if (Array.isArray(otherNotificationsData) && otherNotificationsData.length > 0) {
+                    // friend_request가 아닌 것만 필터링
+                    const filtered = otherNotificationsData.filter((notif: any) => notif.type !== 'friend_request');
+                    
+                    const formatted = filtered.map((notif: any) => ({
+                        id: notif.id,
+                        type: notif.type === 'like' ? 'heart' : notif.type,
+                        username: notif.fromUser?.username || notif.content?.username || notif.fromUser?.name || '알 수 없음',
+                        avatarText: (notif.fromUser?.username || notif.content?.username || notif.fromUser?.name || '알').substring(0, 2),
+                        message: getNotificationMessage(notif.type, notif.content),
+                        time: formatTimeAgo(notif.createdAt),
+                        isRead: notif.isRead,
+                        userId: notif.fromUser?.id || null,
+                    }));
+                    setOtherNotifications(formatted);
+                } else {
+                    setOtherNotifications([]);
+                }
+            } else {
+                // 에러 발생 시에만 상세 로그
+                const errorText = await otherNotificationsResponse.text();
+                console.error('[알림] 일반 알림 조회 실패:', otherNotificationsResponse.status, errorText);
+                console.log('[알림] 에러 발생 시점의 URL:', otherNotificationsUrl);
+            }
+        } catch (error) {
+            console.error('알림 조회 오류:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // 친구 요청 수락/거절 함수
-    const handleFriendRequest = (notificationId: number, action: 'accept' | 'decline') => {
-        setFriendRequests(prev => 
-            prev.filter(notif => notif.id !== notificationId)
-        );
+    const handleFriendRequest = async (notificationId: number, action: 'accept' | 'decline', userId?: number) => {
+        if (!userId) {
+            Alert.alert('오류', '사용자 정보를 찾을 수 없습니다.');
+            return;
+        }
+        
+        try {
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                Alert.alert('오류', '로그인이 필요합니다.');
+                return;
+            }
+
+            // 친구 요청 수락/거절
+            const endpoint = action === 'accept' 
+                ? FRIEND_ENDPOINTS.accept(userId)
+                : FRIEND_ENDPOINTS.decline(userId);
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('요청 처리 실패');
+            }
+
+            // 알림 처리 완료 표시
+            await fetch(NOTIFICATION_ENDPOINTS.processFriendRequest(notificationId), {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            // 로컬 state 업데이트
+            setFriendRequests(prev => 
+                prev.filter(notif => notif.id !== notificationId)
+            );
+
+            if (action === 'accept') {
+                Alert.alert('성공', '친구 요청을 수락했습니다.');
+            }
+        } catch (error) {
+            console.error('친구 요청 처리 오류:', error);
+            Alert.alert('오류', '요청 처리에 실패했습니다.');
+        }
     };
 
     // 모든 알림 읽음 처리 (화면 진입 시 자동 실행)
@@ -138,9 +259,10 @@ const NotificationScreen = () => {
         );
     };
 
-    // 화면 진입 시 모든 알림 읽음 처리
+    // 화면 진입 시 알림 조회 및 읽음 처리
     useFocusEffect(
         React.useCallback(() => {
+            fetchNotifications();
             markAllAsRead();
             // 홈 화면의 알림 개수도 0으로 업데이트
             resetHomeNotificationCount();
@@ -157,9 +279,14 @@ const NotificationScreen = () => {
     };
 
     // 프로필 클릭 핸들러
-    const handleProfileClick = (notification: NotificationItem) => {
+    const handleProfileClick = async (notification: NotificationItem) => {
+        if (!notification.userId) {
+            Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+            return;
+        }
+
         const profileData: ProfileData = {
-            id: notification.id,
+            id: notification.userId,
             title: notification.username,
             score: Math.floor(Math.random() * 10000) + 1000, // 랜덤 점수
             icon: 'person'
@@ -168,6 +295,35 @@ const NotificationScreen = () => {
         setIsHeartLiked(false);
         setIsFriendAdded(false);
         setShowProfileModal(true);
+
+        // 프로필 정보 및 좋아요 상태 확인
+        try {
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (accessToken && notification.userId) {
+                const response = await fetch(USER_ENDPOINTS.getProfileById(notification.userId), {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.resultType === 'SUCCESS' && data.success) {
+                        setIsHeartLiked(data.success.isLiked || false);
+                        // 프로필 데이터 업데이트
+                        setSelectedProfile({
+                            id: data.success.userId,
+                            title: data.success.username || data.success.name,
+                            score: data.success.likesCount || 0,
+                            icon: 'person'
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('프로필 조회 오류:', error);
+        }
     };
 
     // 알림 아이콘 렌더링
@@ -229,13 +385,13 @@ const NotificationScreen = () => {
                         <View style={styles.actionButtons}>
                             <TouchableOpacity
                                 style={[styles.actionButton, styles.acceptButton]}
-                                onPress={() => handleFriendRequest(notification.id, 'accept')}
+                                onPress={() => handleFriendRequest(notification.id, 'accept', notification.userId)}
                             >
                                 <AntDesign name="check" size={16} color="#fff" />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.actionButton, styles.declineButton]}
-                                onPress={() => handleFriendRequest(notification.id, 'decline')}
+                                onPress={() => handleFriendRequest(notification.id, 'decline', notification.userId)}
                             >
                                 <AntDesign name="close" size={16} color="#fff" />
                             </TouchableOpacity>
@@ -262,7 +418,13 @@ const NotificationScreen = () => {
 
             {/* 알림 목록 */}
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                {/* 친구 요청 섹션 */}
+                {isLoading ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color="#4CAF50" />
+                    </View>
+                ) : (
+                    <>
+                        {/* 친구 요청 섹션 */}
                 <View style={styles.notificationSection}>
                     <View style={styles.sectionHeader}>
                         <Ionicons name="person-add-outline" size={20} color="#333" />
@@ -296,6 +458,8 @@ const NotificationScreen = () => {
                         </View>
                     )}
                 </View>
+                    </>
+                )}
             </ScrollView>
 
             {/* 프로필 모달 */}
@@ -367,7 +531,50 @@ const NotificationScreen = () => {
                             <View style={styles.actionButtonsContainer}>
                                 <TouchableOpacity 
                                     style={styles.heartButton}
-                                    onPress={() => setIsHeartLiked(!isHeartLiked)}
+                                    onPress={async () => {
+                                        if (!selectedProfile?.id) {
+                                            Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                            return;
+                                        }
+
+                                        const accessToken = await AsyncStorage.getItem('accessToken');
+                                        if (!accessToken) {
+                                            Alert.alert('로그인 필요', '좋아요를 누르려면 로그인이 필요합니다.');
+                                            return;
+                                        }
+
+                                        try {
+                                            if (isHeartLiked) {
+                                                // 좋아요 취소
+                                                const response = await fetch(USER_ENDPOINTS.unlike(selectedProfile.id), {
+                                                    method: 'DELETE',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 취소 실패');
+                                                }
+                                                setIsHeartLiked(false);
+                                            } else {
+                                                // 좋아요 추가
+                                                const response = await fetch(USER_ENDPOINTS.like(selectedProfile.id), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 추가 실패');
+                                                }
+                                                setIsHeartLiked(true);
+                                            }
+                                        } catch (error) {
+                                            console.error('좋아요 처리 오류:', error);
+                                            Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+                                        }
+                                    }}
                                 >
                                     <Ionicons 
                                         name={isHeartLiked ? "heart" : "heart-outline"} 
@@ -380,7 +587,34 @@ const NotificationScreen = () => {
                                     // 친구 추가 버튼
                                     <TouchableOpacity 
                                         style={styles.addFriendButton}
-                                        onPress={() => setIsFriendAdded(true)}
+                                        onPress={async () => {
+                                            if (!selectedProfile?.id) {
+                                                Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                                return;
+                                            }
+                                            try {
+                                                const accessToken = await AsyncStorage.getItem('accessToken');
+                                                if (!accessToken) {
+                                                    Alert.alert('오류', '로그인이 필요합니다.');
+                                                    return;
+                                                }
+                                                const response = await fetch(FRIEND_ENDPOINTS.request(selectedProfile.id), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('친구 요청 실패');
+                                                }
+                                                Alert.alert('성공', '친구 요청을 보냈습니다.');
+                                                setIsFriendAdded(true);
+                                            } catch (error: any) {
+                                                console.error('친구 요청 오류:', error);
+                                                Alert.alert('오류', error.message || '친구 요청에 실패했습니다.');
+                                            }
+                                        }}
                                     >
                                         <Ionicons name="person-add" size={20} color="#4CAF50" />
                                         <Text style={styles.addFriendText}>친구 추가</Text>
@@ -393,7 +627,33 @@ const NotificationScreen = () => {
                                         </TouchableOpacity>
                                         <TouchableOpacity 
                                             style={styles.removeFriendButton}
-                                            onPress={() => setIsFriendAdded(false)}
+                                            onPress={async () => {
+                                                if (!selectedProfile?.id) {
+                                                    Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                                    return;
+                                                }
+                                                try {
+                                                    const accessToken = await AsyncStorage.getItem('accessToken');
+                                                    if (!accessToken) {
+                                                        Alert.alert('오류', '로그인이 필요합니다.');
+                                                        return;
+                                                    }
+                                                    const response = await fetch(FRIEND_ENDPOINTS.decline(selectedProfile.id), {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${accessToken}`,
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                    });
+                                                    if (!response.ok) {
+                                                        throw new Error('친구 삭제 실패');
+                                                    }
+                                                    setIsFriendAdded(false);
+                                                } catch (error: any) {
+                                                    console.error('친구 삭제 오류:', error);
+                                                    Alert.alert('오류', error.message || '친구 삭제에 실패했습니다.');
+                                                }
+                                            }}
                                         >
                                             <Ionicons name="person-remove" size={20} color="#E53935" />
                                         </TouchableOpacity>

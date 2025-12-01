@@ -36,6 +36,13 @@ export const USER_ENDPOINTS = {
     getProfile: `${API_BASE_URL}/user`,  // 본인 프로필 조회
     getProfileById: (userId: number) => `${API_BASE_URL}/user/${userId}`,  // 타인 프로필 조회
     updateProfile: `${API_BASE_URL}/user/profile`,  // 프로필 업데이트
+    searchUsers: (query: string, limit?: number, offset?: number) => {
+        const params = new URLSearchParams();
+        params.append('q', query);
+        if (limit) params.append('limit', limit.toString());
+        if (offset) params.append('offset', offset.toString());
+        return `${API_BASE_URL}/user/search?${params.toString()}`;
+    },
     like: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
     unlike: (userId: number) => `${API_BASE_URL}/user/${userId}/like`,
 };
@@ -46,5 +53,22 @@ export const FRIEND_ENDPOINTS = {
     request: (userId: number) => `${API_BASE_URL}/friend/request/${userId}`,
     accept: (userId: number) => `${API_BASE_URL}/friend/accept/${userId}`,
     decline: (userId: number) => `${API_BASE_URL}/friend/decline/${userId}`,
+};
+
+// 알림 엔드포인트
+export const NOTIFICATION_ENDPOINTS = {
+    getNotifications: (params?: { type?: string; processed?: boolean; isRead?: boolean; take?: number }) => {
+        const url = new URL(`${API_BASE_URL}/notification`);
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) {
+                    url.searchParams.append(key, String(value));
+                }
+            });
+        }
+        return url.toString();
+    },
+    readNotification: (notifId: number) => `${API_BASE_URL}/notification/${notifId}/read`,
+    processFriendRequest: (notifId: number) => `${API_BASE_URL}/notification/${notifId}/friend-request/process`,
 };
 

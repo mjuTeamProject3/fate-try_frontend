@@ -54,7 +54,7 @@ export default function LoginScreen() {
                 
                 // 서버에 사용자 프로필 조회
                 try {
-                    const response = await fetch(USER_ENDPOINTS.profile, {
+                    const response = await fetch(USER_ENDPOINTS.getProfile, {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
                             'Content-Type': 'application/json',

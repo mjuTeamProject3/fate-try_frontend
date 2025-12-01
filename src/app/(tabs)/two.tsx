@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 // 스타일 임포트
 import styles from '@/styles/Profile';
@@ -157,6 +157,8 @@ export default function ProfileScreen() {
             const data = await response.json();
             if (data.resultType === 'SUCCESS' && data.success) {
                 setSelectedFriendProfile(data.success);
+                // 좋아요 상태 설정
+                setIsHeartLiked(data.success.isLiked || false);
             }
         } catch (error) {
             console.error('친구 프로필 조회 오류:', error);
@@ -530,7 +532,52 @@ export default function ProfileScreen() {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                     }}
-                                    onPress={() => setIsHeartLiked(!isHeartLiked)}
+                                    onPress={async () => {
+                                        if (!selectedFriend?.id) {
+                                            Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                            return;
+                                        }
+
+                                        const accessToken = await AsyncStorage.getItem('accessToken');
+                                        if (!accessToken) {
+                                            Alert.alert('로그인 필요', '좋아요를 누르려면 로그인이 필요합니다.');
+                                            return;
+                                        }
+
+                                        try {
+                                            if (isHeartLiked) {
+                                                // 좋아요 취소
+                                                const response = await fetch(USER_ENDPOINTS.unlike(selectedFriend.id), {
+                                                    method: 'DELETE',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 취소 실패');
+                                                }
+                                                setIsHeartLiked(false);
+                                            } else {
+                                                // 좋아요 추가
+                                                const response = await fetch(USER_ENDPOINTS.like(selectedFriend.id), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 추가 실패');
+                                                }
+                                                setIsHeartLiked(true);
+                                            }
+                                            // 프로필 새로고침
+                                            await fetchFriendProfile(selectedFriend.id);
+                                        } catch (error) {
+                                            console.error('좋아요 처리 오류:', error);
+                                            Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+                                        }
+                                    }}
                                 >
                                     <Ionicons 
                                         name={isHeartLiked ? "heart" : "heart-outline"} 

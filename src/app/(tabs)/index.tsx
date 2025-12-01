@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 이미지 모달 컴포넌트
 import ImageModal from '@/components/ImageModal';
 // API 엔드포인트 임포트
-import { RANKING_ENDPOINTS, getUserLikeEndpoint } from '@/constants/api';
+import { RANKING_ENDPOINTS, getUserLikeEndpoint, USER_ENDPOINTS } from '@/constants/api';
 
 // 랭킹 데이터 타입 정의
 interface RankingItem {
@@ -63,25 +63,63 @@ const HomeScreen = () => {
     // 최초 회원가입 체크 함수 (한 번만 실행)
     const checkFirstSignup = async () => {
         try {
+            // 로그인 상태 확인
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                // 로그인되지 않은 경우 체크하지 않음
+                return;
+            }
+            
             // 이미 체크했는지 확인
             const hasCheckedSignup = await AsyncStorage.getItem('hasCheckedSignup');
             if (hasCheckedSignup === 'true') {
                 return; // 이미 체크했으면 건너뛰기
             }
             
-            // 프로필 정보가 있는지 확인
-            const userNickname = await AsyncStorage.getItem('userNickname');
-            const userBirthDate = await AsyncStorage.getItem('userBirthDate');
-            const userRegion = await AsyncStorage.getItem('userRegion');
-            const userGender = await AsyncStorage.getItem('userGender');
-            
-            // 프로필 정보가 없으면 추가 정보 입력 페이지로 이동
-            if (!userNickname || !userBirthDate || !userRegion || !userGender) {
-                router.replace('/signup-additional');
-            } else {
-                // 프로필 정보가 있으면 체크 완료 표시
+            // API로 실제 프로필 조회
+            try {
+                const response = await fetch(USER_ENDPOINTS.getProfile, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.resultType === 'SUCCESS' && data.success) {
+                        const profile = data.success;
+                        // 프로필 완성 여부 확인 (필수 필드: username, birthdate, location)
+                        // 백엔드 checkProfileComplete 함수와 동일한 로직
+                        const isProfileComplete = !!(
+                            profile.username && 
+                            profile.birthdate && 
+                            profile.location
+                        );
+                        
+                        if (isProfileComplete) {
+                            // 프로필이 완성되어 있으면 체크 완료 표시
+                            await AsyncStorage.setItem('hasCheckedSignup', 'true');
+                        } else {
+                            // 프로필이 완성되지 않았으면 추가 정보 입력 페이지로 이동
+                            router.replace('/signup-additional');
+                        }
+                        return;
+                    }
+                }
+            } catch (apiError) {
+                console.error('프로필 API 조회 오류:', apiError);
+                // API 조회 실패 시 (네트워크 오류 등) 프로필 체크를 건너뛰고 체크 완료로 처리
+                // 이미 로그인된 사용자는 프로필이 있을 가능성이 높고, 네트워크 문제로 인한 오류일 수 있음
+                // 강제로 회원가입 화면으로 보내지 않음
                 await AsyncStorage.setItem('hasCheckedSignup', 'true');
+                return;
             }
+            
+            // API 응답이 성공이지만 데이터가 없는 경우에만 AsyncStorage로 폴백 체크
+            // 하지만 이 경우도 네트워크 문제일 수 있으므로 체크 완료로 처리
+            await AsyncStorage.setItem('hasCheckedSignup', 'true');
         } catch (error) {
             console.error('최초 회원가입 체크 오류:', error);
         }
@@ -134,18 +172,20 @@ const HomeScreen = () => {
     const loadOverallRanking = async () => {
         try {
             setIsLoadingOverall(true);
-            console.log('🔍 전체 랭킹 API 호출:', RANKING_ENDPOINTS.overall);
             const response = await fetch(RANKING_ENDPOINTS.overall);
             if (!response.ok) {
+                // 에러 발생 시에만 상세 로그
+                console.log('🔍 전체 랭킹 API 호출 실패:', RANKING_ENDPOINTS.overall);
+                console.log('❌ 응답 상태:', response.status);
                 throw new Error('전체 랭킹 로드 실패');
             }
             const data = await response.json();
-            console.log('✅ 전체 랭킹 API 응답:', data);
             const transformed = transformRankingData(data);
-            console.log('📊 변환된 전체 랭킹 데이터:', transformed);
             setOverallRanking(transformed);
         } catch (error) {
+            // 에러 발생 시에만 상세 정보 출력
             console.error('❌ 전체 랭킹 로드 오류:', error);
+            console.log('🔍 에러 발생 시점의 API:', RANKING_ENDPOINTS.overall);
             // 에러 시 빈 배열 유지
             setOverallRanking([]);
         } finally {
@@ -157,18 +197,20 @@ const HomeScreen = () => {
     const loadMonthlyRanking = async () => {
         try {
             setIsLoadingMonthly(true);
-            console.log('🔍 월간 랭킹 API 호출:', RANKING_ENDPOINTS.monthly);
             const response = await fetch(RANKING_ENDPOINTS.monthly);
             if (!response.ok) {
+                // 에러 발생 시에만 상세 로그
+                console.log('🔍 월간 랭킹 API 호출 실패:', RANKING_ENDPOINTS.monthly);
+                console.log('❌ 응답 상태:', response.status);
                 throw new Error('월간 랭킹 로드 실패');
             }
             const data = await response.json();
-            console.log('✅ 월간 랭킹 API 응답:', data);
             const transformed = transformRankingData(data);
-            console.log('📊 변환된 월간 랭킹 데이터:', transformed);
             setMonthlyRanking(transformed);
         } catch (error) {
+            // 에러 발생 시에만 상세 정보 출력
             console.error('❌ 월간 랭킹 로드 오류:', error);
+            console.log('🔍 에러 발생 시점의 API:', RANKING_ENDPOINTS.monthly);
             // 에러 시 빈 배열 유지
             setMonthlyRanking([]);
         } finally {
@@ -182,30 +224,30 @@ const HomeScreen = () => {
             setIsLoadingLocal(true);
             const accessToken = await AsyncStorage.getItem('accessToken');
             if (!accessToken) {
-                console.log('⚠️  지역별 랭킹: Access Token 없음 (더미 데이터 사용)');
                 // 토큰이 없으면 빈 배열 반환
                 setLocalRanking([]);
                 return;
             }
 
-            console.log('🔍 지역별 랭킹 API 호출:', RANKING_ENDPOINTS.local);
             const response = await fetch(RANKING_ENDPOINTS.local, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                 },
             });
             if (!response.ok) {
+                // 에러 발생 시에만 상세 로그
                 const errorText = await response.text();
+                console.log('🔍 지역별 랭킹 API 호출 실패:', RANKING_ENDPOINTS.local);
                 console.error('❌ 지역별 랭킹 응답 오류:', response.status, errorText);
                 throw new Error(`지역별 랭킹 로드 실패: ${response.status} ${errorText}`);
             }
             const data = await response.json();
-            console.log('✅ 지역별 랭킹 API 응답:', data);
             const transformed = transformRankingData(data);
-            console.log('📊 변환된 지역별 랭킹 데이터:', transformed);
             setLocalRanking(transformed);
         } catch (error) {
+            // 에러 발생 시에만 상세 정보 출력
             console.error('❌ 지역별 랭킹 로드 오류:', error);
+            console.log('🔍 에러 발생 시점의 API:', RANKING_ENDPOINTS.local);
             // 에러 시 빈 배열 유지
             setLocalRanking([]);
         } finally {
@@ -249,13 +291,11 @@ const HomeScreen = () => {
     const sortedRankingData = useMemo(
         () => {
             if (overallRanking.length > 0) {
-                console.log('✅ 전체 랭킹: API 데이터 사용 중 (실제 데이터)');
                 return [...overallRanking].sort(
                     (a, b) => Number(b.score) - Number(a.score),
                 );
             }
             // 데이터가 없을 때는 더미 데이터 사용 (fallback)
-            console.log('⚠️  전체 랭킹: API 데이터 없음, 더미 데이터 사용 중');
             const fallbackData: RankingItem[] = [
         { id: 1, title: '카리나', score: 15420, icon: 'person', image: karinaImageUrl },
         { id: 2, title: '유나', score: 12890, icon: 'person', image: yunaImageUrl },
@@ -292,13 +332,11 @@ const HomeScreen = () => {
     const sortedMonthlyRankingData = useMemo(
         () => {
             if (monthlyRanking.length > 0) {
-                console.log('✅ 월간 랭킹: API 데이터 사용 중 (실제 데이터)');
                 return [...monthlyRanking].sort(
                     (a, b) => Number(b.score) - Number(a.score),
                 );
             }
             // 데이터가 없을 때는 더미 데이터 사용 (fallback)
-            console.log('⚠️  월간 랭킹: API 데이터 없음, 더미 데이터 사용 중');
             const fallbackData: RankingItem[] = [
                 { id: 1, title: '김채원', score: 8650, icon: 'person' , image: chaewonImageUrl },
                 { id: 2, title: '이안', score: 7980, icon: 'person' , image: anImageUrl },
@@ -315,13 +353,11 @@ const HomeScreen = () => {
     const sortedLocalRankingData = useMemo(
         () => {
             if (localRanking.length > 0) {
-                console.log('✅ 지역별 랭킹: API 데이터 사용 중 (실제 데이터)');
                 return [...localRanking].sort(
                     (a, b) => Number(b.score) - Number(a.score),
                 );
             }
             // 데이터가 없을 때는 더미 데이터 사용 (fallback)
-            console.log('⚠️  지역별 랭킹: API 데이터 없음, 더미 데이터 사용 중');
             const fallbackData: RankingItem[] = [
         { id: 1, title: '조아용', score: 2650, icon: 'person' , image: hongpeople },
         { id: 2, title: '한강뷰', score: 3420, icon: 'person', image: hankang },
@@ -369,11 +405,35 @@ const HomeScreen = () => {
         <TouchableOpacity 
             style={styles.rankingCard}
             onPress={async () => {
-                console.log('랭킹 카드 클릭:', item.title);
                 setSelectedProfile(item);
                 setIsHeartLiked(false); // 하트 상태 초기화
                 setIsFriendAdded(false); // 친구 상태 초기화
                 setKeywordsExpanded(false); // 키워드 펼침 상태 초기화
+                
+                // 프로필 정보 및 좋아요 상태 확인
+                try {
+                    const accessToken = await AsyncStorage.getItem('accessToken');
+                    if (accessToken && item.id) {
+                        const response = await fetch(USER_ENDPOINTS.getProfileById(item.id), {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'application/json',
+                            },
+                        });
+                        if (!response.ok) {
+                            // 에러 발생 시에만 로그
+                            console.error('프로필 조회 실패:', response.status);
+                        } else {
+                            const data = await response.json();
+                            if (data.resultType === 'SUCCESS' && data.success) {
+                                setIsHeartLiked(data.success.isLiked || false);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('프로필 조회 오류:', error);
+                }
                 
                 // 친구 요청 상태 확인
                 const pendingRequests = await AsyncStorage.getItem('friend_requests');
@@ -382,7 +442,6 @@ const HomeScreen = () => {
                 setIsFriendRequestSent(hasRequestSent);
                 
                 setShowProfileModal(true);
-                console.log('프로필 모달 상태:', showProfileModal);
             }}
         >
             <Text style={styles.rankingNumber}>{index + 1}</Text>
@@ -943,6 +1002,28 @@ const HomeScreen = () => {
                                             setIsFriendAdded(false);
                                             setKeywordsExpanded(false);
                                             setShowRankingModal(false);
+                                            
+                                            // 프로필 정보 및 좋아요 상태 확인
+                                            try {
+                                                const accessToken = await AsyncStorage.getItem('accessToken');
+                                                if (accessToken && item.id) {
+                                                    const response = await fetch(USER_ENDPOINTS.getProfileById(item.id), {
+                                                        method: 'GET',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${accessToken}`,
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                    });
+                                                    if (response.ok) {
+                                                        const data = await response.json();
+                                                        if (data.resultType === 'SUCCESS' && data.success) {
+                                                            setIsHeartLiked(data.success.isLiked || false);
+                                                        }
+                                                    }
+                                                }
+                                            } catch (error) {
+                                                console.error('프로필 조회 오류:', error);
+                                            }
                                             
                                             const pendingRequests = await AsyncStorage.getItem('friend_requests');
                                             const requests = pendingRequests ? JSON.parse(pendingRequests) : [];

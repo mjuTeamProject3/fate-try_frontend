@@ -146,7 +146,7 @@ export default function SignupAdditionalScreen() {
 
             // 백엔드 API로 프로필 업데이트
             const { USER_ENDPOINTS } = await import('@/constants/api');
-            const response = await fetch(USER_ENDPOINTS.profile, {
+            const response = await fetch(USER_ENDPOINTS.updateProfile, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

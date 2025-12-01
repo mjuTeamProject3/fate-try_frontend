@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TouchableWithoutFeedback, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, Modal, Alert, Keyboard } from 'react-native';
+import { View, Text, TouchableOpacity, TouchableWithoutFeedback, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image, Modal, Alert, Keyboard, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { Socket } from 'socket.io-client';
 import styles from '@/styles/ChatRoomStyles';
 import ImageModal from '@/components/ImageModal';
+import { getSocket } from '@/utils/socket';
+import { USER_ENDPOINTS } from '@/constants/api';
 
 // 채팅 메시지 인터페이스
 interface Message {
@@ -22,12 +25,26 @@ export default function ChatRoomScreen() {
     // URL 파라미터에서 사용자 정보 가져오기
     const params = useLocalSearchParams();
     const chatId = params.chatId ? Number(params.chatId) : null;
-    const userName = params.name as string || '사용자';
-    const userAvatar = params.avatar as string || '사용자';
+    const roomId = params.roomId as string || null; // 랜덤 채팅 roomId
+    const partnerId = params.partnerId ? Number(params.partnerId) : null;
+    const userName = params.name as string || params.partnerUsername as string || '사용자';
+    const userAvatar = params.avatar as string || (userName ? userName.substring(0, 2) : '사용자');
     const isRandom = params.isRandom === 'true'; // 랜덤 채팅인지 확인
     
-    // 사주 궁합도 점수 (랜덤 생성)
-    const [compatibilityScore] = useState(Math.floor(Math.random() * 21) + 80); // 80~100점
+    // 사주 궁합도 점수 (랜덤 채팅이면 params에서 받기, 아니면 랜덤 생성)
+    const [compatibilityScore, setCompatibilityScore] = useState<number>(
+        isRandom && params.compatibilityScore 
+            ? Number(params.compatibilityScore) 
+            : Math.floor(Math.random() * 21) + 80
+    );
+    const [verdict, setVerdict] = useState<string>(params.verdict as string || '');
+    
+    // Socket.io 연결
+    const socketRef = useRef<Socket | null>(null);
+    const messageIdCounter = useRef<number>(1);
+    const currentUserIdRef = useRef<number | null>(null);
+    // 최근 전송한 메시지 추적 (중복 방지용)
+    const recentSentMessagesRef = useRef<Array<{ text: string; timestamp: number }>>([]);
     
     // 채팅방에 들어왔을 때 읽음 처리
     useEffect(() => {
@@ -69,6 +86,9 @@ export default function ChatRoomScreen() {
     const [showImageExpandModal, setShowImageExpandModal] = useState(false);
     const [selectedMessageImage, setSelectedMessageImage] = useState<string | null>(null);
     const [isMessageImageModalVisible, setMessageImageModalVisible] = useState(false);
+    // 상대방 프로필 데이터
+    const [partnerProfile, setPartnerProfile] = useState<any>(null);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(false);
     
     // 대화주제 추천 모달 상태
     const [showTopicModal, setShowTopicModal] = useState(false);
@@ -76,42 +96,131 @@ export default function ChatRoomScreen() {
     // 나가기 확인 모달 상태
     const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
     
-    // 대화주제 데이터
-    const conversationTopics = [
-        "오늘 날씨가 정말 좋네요! 어떤 계획이 있으신가요?",
-        "요즘 즐겨보는 드라마나 영화가 있나요?",
-        "좋아하는 음식이나 맛집이 있다면 추천해주세요!",
-        "주말에는 보통 어떻게 보내시나요?",
-        "여행 가고 싶은 곳이 있다면 어디인가요?",
-        "취미나 관심사가 있으시다면 무엇인가요?",
-        "좋아하는 음악 장르나 아티스트가 있나요?",
-        "운동이나 스포츠를 즐기시나요?",
-        "책을 읽는 것을 좋아하시나요?",
-        "요리나 베이킹에 관심이 있으신가요?"
-    ];
+    // 대화주제 데이터 (저장된 주제 배열)
+    const [savedTopics, setSavedTopics] = useState<string[]>([]);
+    // 대화주제 요청 중인지 여부
+    const [isRequestingTopics, setIsRequestingTopics] = useState(false);
     
-    // 대화주제 선택 함수
+    // 대화주제 선택 함수 (주제를 바로 화면에 표시)
     const selectTopic = (topic: string) => {
-        const newMessage: Message = {
-            id: messages.length + 1,
-            text: topic,
-            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-            isMine: false,
-            isSystem: true // 시스템 메시지로 표시
-        };
+        const now = Date.now();
         
-        setMessages([...messages, newMessage]);
-        setShowTopicModal(false);
+        // 최근 전송한 메시지 목록에 추가 (중복 방지용)
+        recentSentMessagesRef.current.push({ text: topic, timestamp: now });
+        if (recentSentMessagesRef.current.length > 10) {
+            recentSentMessagesRef.current.shift();
+        }
+        
+        // 선택한 주제를 시스템 메시지로 전송 (양쪽 모두에게 표시)
+        if (socketRef.current && roomId) {
+            socketRef.current.emit('message:send', {
+                roomId,
+                text: topic,
+                isSystem: true, // 시스템 메시지 플래그
+            });
+        }
+        
+        // 로컬 추가는 하지 않음 (Socket.io로 받아서 표시)
+        setMessageText('');
+        
+        setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+    };
+    
+    // 전구 버튼 클릭 핸들러
+    const handleTopicButtonClick = async () => {
+        if (isRandom && socketRef.current && roomId) {
+            // 저장된 주제가 있으면 1개씩 꺼내서 바로 표시
+            if (savedTopics.length > 0) {
+                const topic = savedTopics[0];
+                const remainingTopics = savedTopics.slice(1);
+                setSavedTopics(remainingTopics);
+                selectTopic(topic);
+                return;
+            }
+            
+            // 저장된 주제가 없으면 요청
+            if (!isRequestingTopics) {
+                setIsRequestingTopics(true);
+                socketRef.current.emit('topics:suggest', { roomId, context: '' });
+            }
+        } else {
+            // 일반 채팅이면 기존 방식 (랜덤 선택)
+            const randomTopic = savedTopics[Math.floor(Math.random() * savedTopics.length)];
+            if (randomTopic) {
+                selectTopic(randomTopic);
+            }
+        }
+    };
+
+    // 나이 계산 함수
+    const calculateAge = (birthdate: string | null): number | null => {
+        if (!birthdate) return null;
+        try {
+            const date = new Date(birthdate);
+            if (isNaN(date.getTime())) return null;
+            const today = new Date();
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const day = date.getDate();
+            const age = today.getFullYear() - year - (today.getMonth() < month || (today.getMonth() === month && today.getDate() < day) ? 1 : 0);
+            return age;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    // 상대방 프로필 조회 함수
+    const fetchPartnerProfile = async () => {
+        if (!partnerId) return;
+        
+        try {
+            setIsLoadingProfile(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.error('Access Token이 없습니다.');
+                return;
+            }
+
+            const response = await fetch(USER_ENDPOINTS.getProfileById(partnerId), {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('프로필 조회 실패');
+            }
+
+            const data = await response.json();
+            if (data.resultType === 'SUCCESS' && data.success) {
+                setPartnerProfile(data.success);
+                // 좋아요 상태 설정
+                setIsHeartLiked(data.success.isLiked || false);
+            }
+        } catch (error) {
+            console.error('상대방 프로필 조회 오류:', error);
+        } finally {
+            setIsLoadingProfile(false);
+        }
     };
 
     // 프로필 모달 열기 핸들러 (키보드도 함께 닫음)
-    const handleOpenProfile = () => {
+    const handleOpenProfile = async () => {
         // 키보드 닫기
         Keyboard.dismiss();
         // 프로필 모달 열기
         setIsHeartLiked(false);
         setIsFriendAdded(true);
         setShowProfileModal(true);
+        
+        // 랜덤 채팅이고 partnerId가 있으면 프로필 조회
+        if (isRandom && partnerId) {
+            await fetchPartnerProfile();
+        }
     };
     
     // 나가기 확인 모달 핸들러들
@@ -123,7 +232,11 @@ export default function ChatRoomScreen() {
         }
     };
 
-    const confirmExit = () => {
+    const confirmExit = async () => {
+        // 랜덤 채팅이면 Socket.io로 채팅 종료 이벤트 전송
+        if (isRandom && socketRef.current && roomId) {
+            socketRef.current.emit('chat:end', { roomId, reason: 'user_left' });
+        }
         setShowExitConfirmModal(false);
         router.push('/(tabs)');
     };
@@ -174,19 +287,232 @@ export default function ChatRoomScreen() {
         ]
     );
 
+    // Socket.io 연결 및 메시지 수신 설정
+    useEffect(() => {
+        if (!isRandom || !roomId) return;
+
+        let mounted = true;
+
+        const initSocketConnection = async () => {
+            try {
+                // 현재 사용자 ID 가져오기 (JWT 토큰에서)
+                try {
+                    const accessToken = await AsyncStorage.getItem('accessToken');
+                    if (accessToken) {
+                        // JWT 토큰 디코딩 (간단한 방법)
+                        const payload = JSON.parse(atob(accessToken.split('.')[1]));
+                        currentUserIdRef.current = payload.userId;
+                        console.log('[채팅방] 현재 사용자 ID:', currentUserIdRef.current);
+                    } else {
+                        console.error('[채팅방] accessToken이 없습니다');
+                    }
+                } catch (e) {
+                    console.error('[채팅방] 사용자 ID 가져오기 실패:', e);
+                }
+
+                const socket = await getSocket();
+                if (!socket) {
+                    console.error('[채팅방] Socket 연결 실패');
+                    return;
+                }
+
+                socketRef.current = socket;
+
+                // 서버에서 이미 join 처리되었으므로 클라이언트에서는 추가 작업 불필요
+                // 단, roomId를 확인하여 연결 상태 확인
+                console.log('[채팅방] Socket 연결 완료, roomId:', roomId, 'currentUserId:', currentUserIdRef.current);
+
+                // 메시지 수신 이벤트 리스너
+                socket.on('message:new', (data: {
+                    userId: number;
+                    text: string;
+                    imageUrl: string | null;
+                    ts: number;
+                    isSystem?: boolean;
+                }) => {
+                    if (!mounted) return;
+
+                    console.log('[채팅방] 메시지 수신:', {
+                        userId: data.userId,
+                        currentUserId: currentUserIdRef.current,
+                        text: data.text.substring(0, 20),
+                        isSystem: data.isSystem
+                    });
+
+                    // 시스템 메시지(대화 주제 추천)인 경우 양쪽 모두에게 표시
+                    if (data.isSystem) {
+                        // 중복 체크: 최근 전송한 메시지와 비교
+                        const messageTime = new Date(data.ts).getTime();
+                        const isRecentSentMessage = recentSentMessagesRef.current.some(msg => {
+                            const timeDiff = Math.abs(messageTime - msg.timestamp);
+                            return msg.text === data.text && timeDiff < 2000; // 2초 이내
+                        });
+                        
+                        if (isRecentSentMessage) {
+                            console.log('[채팅방] 내가 보낸 시스템 메시지 무시:', data.text.substring(0, 20));
+                            // 최근 메시지 목록에서 제거 (메모리 절약)
+                            recentSentMessagesRef.current = recentSentMessagesRef.current.filter(msg => {
+                                const timeDiff = Math.abs(messageTime - msg.timestamp);
+                                return !(msg.text === data.text && timeDiff < 2000);
+                            });
+                            return;
+                        }
+                        
+                        const newMessage: Message = {
+                            id: messageIdCounter.current++,
+                            text: data.text,
+                            time: new Date(data.ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                            isMine: false,
+                            isSystem: true,
+                            image: data.imageUrl || undefined,
+                        };
+                        setMessages(prev => [...prev, newMessage]);
+                        return;
+                    }
+
+                    // 내가 보낸 일반 메시지는 무시 (이미 로컬에서 추가했으므로)
+                    // 방법 1: userId 비교
+                    if (currentUserIdRef.current && data.userId === currentUserIdRef.current) {
+                        console.log('[채팅방] 내가 보낸 메시지 무시 (userId 비교):', data.text.substring(0, 20));
+                        return;
+                    }
+                    
+                    // 방법 2: 최근 전송한 메시지와 비교 (userId가 제대로 설정되지 않은 경우 대비)
+                    const messageTime = new Date(data.ts).getTime();
+                    const isRecentSentMessage = recentSentMessagesRef.current.some(msg => {
+                        const timeDiff = Math.abs(messageTime - msg.timestamp);
+                        // 텍스트 메시지 비교
+                        if (data.text && msg.text === data.text && timeDiff < 2000) {
+                            return true;
+                        }
+                        // 이미지 메시지 비교
+                        if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 2000) {
+                            return true;
+                        }
+                        return false;
+                    });
+                    
+                    if (isRecentSentMessage) {
+                        console.log('[채팅방] 내가 보낸 메시지 무시 (최근 메시지 비교):', data.text ? data.text.substring(0, 20) : '이미지');
+                        // 최근 메시지 목록에서 제거 (메모리 절약)
+                        recentSentMessagesRef.current = recentSentMessagesRef.current.filter(msg => {
+                            const timeDiff = Math.abs(messageTime - msg.timestamp);
+                            if (data.text && msg.text === data.text && timeDiff < 2000) return false;
+                            if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 2000) return false;
+                            return true;
+                        });
+                        return;
+                    }
+
+                    // 상대방이 보낸 일반 메시지만 추가
+                    const newMessage: Message = {
+                        id: messageIdCounter.current++,
+                        text: data.text,
+                        time: new Date(data.ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                        isMine: false,
+                        image: data.imageUrl || undefined,
+                    };
+
+                    console.log('[채팅방] 상대방 메시지 추가:', data.text.substring(0, 20));
+                    setMessages(prev => [...prev, newMessage]);
+                });
+
+                // 채팅 종료 이벤트
+                socket.on('chat:ended', (data: { reason: string }) => {
+                    console.log('[채팅방] 채팅 종료:', data.reason);
+                    if (mounted) {
+                        const message = data.reason === 'reported' 
+                            ? '상대의 신고로 인해 채팅이 종료되었습니다.' 
+                            : '상대방이 채팅방을 나갔습니다.';
+                        Alert.alert('채팅 종료', message, [
+                            { text: '확인', onPress: () => router.replace('/(tabs)') }
+                        ]);
+                    }
+                });
+
+                // 대화 주제 수신 이벤트
+                socket.on('topics:list', (data: { topics: Array<{ topic: string }> | string[] }) => {
+                    if (!mounted) return;
+                    setIsRequestingTopics(false);
+                    
+                    // topics가 객체 배열인지 문자열 배열인지 확인
+                    const topics = Array.isArray(data.topics) && data.topics.length > 0
+                        ? (typeof data.topics[0] === 'string' 
+                            ? data.topics as string[]
+                            : (data.topics as Array<{ topic: string }>).map((t: { topic: string }) => t.topic))
+                        : [];
+                    
+                    if (topics.length > 0) {
+                        // 첫 번째 주제는 바로 표시
+                        const firstTopic = topics[0];
+                        const remainingTopics = topics.slice(1);
+                        
+                        // 나머지 주제는 저장
+                        setSavedTopics(remainingTopics);
+                        
+                        // 첫 번째 주제를 바로 화면에 표시
+                        selectTopic(firstTopic);
+                    } else {
+                        Alert.alert('알림', '대화 주제를 가져올 수 없습니다.');
+                    }
+                });
+
+                // 이미 추천된 경우 (이제 사용하지 않지만 호환성을 위해 유지)
+                socket.on('topics:already', (data: { message: string }) => {
+                    setIsRequestingTopics(false);
+                    Alert.alert('알림', data.message);
+                });
+            } catch (error) {
+                console.error('[채팅방] Socket 초기화 오류:', error);
+            }
+        };
+
+        initSocketConnection();
+
+        return () => {
+            mounted = false;
+            if (socketRef.current) {
+                socketRef.current.off('message:new');
+                socketRef.current.off('chat:ended');
+                socketRef.current.off('topics:list');
+                socketRef.current.off('topics:already');
+            }
+        };
+    }, [isRandom, roomId, partnerId]);
+
     // 메시지 전송 핸들러
     const handleSendMessage = () => {
         if (messageText.trim() === '') return;
         
+        const text = messageText.trim();
+        setMessageText('');
+
+        // 로컬 메시지 추가 (즉시 표시) - 먼저 추가하여 즉시 피드백 제공
+        const now = Date.now();
         const newMessage: Message = {
-            id: messages.length + 1,
-            text: messageText,
-            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            id: messageIdCounter.current++,
+            text,
+            time: new Date(now).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
             isMine: true
         };
         
-        setMessages([...messages, newMessage]);
-        setMessageText('');
+        // 최근 전송한 메시지 목록에 추가 (중복 방지용)
+        recentSentMessagesRef.current.push({ text, timestamp: now });
+        // 오래된 메시지 제거 (최근 10개만 유지)
+        if (recentSentMessagesRef.current.length > 10) {
+            recentSentMessagesRef.current.shift();
+        }
+        
+        console.log('[채팅방] 메시지 전송:', text.substring(0, 20), 'currentUserId:', currentUserIdRef.current);
+        setMessages(prev => [...prev, newMessage]);
+
+        // 랜덤 채팅이면 Socket.io로 전송
+        if (isRandom && socketRef.current && roomId) {
+            socketRef.current.emit('message:send', {
+                roomId,
+                text,
+            });
+        }
         
         // 전송 후 스크롤을 맨 아래로 이동 (키보드는 유지)
         setTimeout(() => {
@@ -262,17 +588,37 @@ export default function ChatRoomScreen() {
             });
             
             if (!result.canceled && result.assets[0]) {
-                // 선택된 이미지를 메시지로 전송
+                const imageUri = result.assets[0].uri;
+                const now = Date.now();
+                
+                // 로컬 메시지 추가 (먼저 추가)
                 const newMessage: Message = {
-                    id: messages.length + 1,
+                    id: messageIdCounter.current++,
                     text: '',
-                    time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                    time: new Date(now).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
                     isMine: true,
-                    image: result.assets[0].uri
+                    image: imageUri
                 };
                 
-                setMessages([...messages, newMessage]);
+                // 최근 전송한 메시지 목록에 추가 (중복 방지용, 이미지는 URI로 구분)
+                recentSentMessagesRef.current.push({ text: `IMAGE:${imageUri}`, timestamp: now });
+                if (recentSentMessagesRef.current.length > 10) {
+                    recentSentMessagesRef.current.shift();
+                }
+                
+                setMessages(prev => [...prev, newMessage]);
                 setShowImageModal(false);
+                
+                // 랜덤 채팅이면 Socket.io로 이미지 전송
+                if (isRandom && socketRef.current && roomId) {
+                    // 실제 구현에서는 이미지를 서버에 업로드하고 URL을 받아야 함
+                    // 여기서는 일단 로컬 URI를 전송 (실제로는 서버 URL이어야 함)
+                    socketRef.current.emit('message:send', {
+                        roomId,
+                        text: '',
+                        imageUrl: imageUri, // 실제로는 서버에 업로드한 URL
+                    });
+                }
             }
         } catch (error) {
             console.error('이미지 선택 오류:', error);
@@ -299,17 +645,37 @@ export default function ChatRoomScreen() {
             });
             
             if (!result.canceled && result.assets[0]) {
-                // 촬영한 이미지를 메시지로 전송
+                const imageUri = result.assets[0].uri;
+                const now = Date.now();
+                
+                // 로컬 메시지 추가 (먼저 추가)
                 const newMessage: Message = {
-                    id: messages.length + 1,
+                    id: messageIdCounter.current++,
                     text: '',
-                    time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                    time: new Date(now).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
                     isMine: true,
-                    image: result.assets[0].uri
+                    image: imageUri
                 };
                 
-                setMessages([...messages, newMessage]);
+                // 최근 전송한 메시지 목록에 추가 (중복 방지용, 이미지는 URI로 구분)
+                recentSentMessagesRef.current.push({ text: `IMAGE:${imageUri}`, timestamp: now });
+                if (recentSentMessagesRef.current.length > 10) {
+                    recentSentMessagesRef.current.shift();
+                }
+                
+                setMessages(prev => [...prev, newMessage]);
                 setShowImageModal(false);
+                
+                // 랜덤 채팅이면 Socket.io로 이미지 전송
+                if (isRandom && socketRef.current && roomId) {
+                    // 실제 구현에서는 이미지를 서버에 업로드하고 URL을 받아야 함
+                    // 여기서는 일단 로컬 URI를 전송 (실제로는 서버 URL이어야 함)
+                    socketRef.current.emit('message:send', {
+                        roomId,
+                        text: '',
+                        imageUrl: imageUri, // 실제로는 서버에 업로드한 URL
+                    });
+                }
             }
         } catch (error) {
             console.error('카메라 촬영 오류:', error);
@@ -346,7 +712,17 @@ export default function ChatRoomScreen() {
                 <View style={styles.headerRight}>
                     {isRandom && (
                         <TouchableOpacity 
-                            onPress={() => router.push('/report')}
+                            onPress={() => {
+                                router.push({
+                                    pathname: '/report',
+                                    params: {
+                                        partnerId: partnerId ? String(partnerId) : '',
+                                        partnerUsername: userName,
+                                        roomId: roomId || '',
+                                        isRandom: 'true'
+                                    }
+                                });
+                            }}
                         >
                             <Ionicons name="flag-outline" size={24} color="#333" />
                         </TouchableOpacity>
@@ -371,7 +747,7 @@ export default function ChatRoomScreen() {
                         </View>
                         
                         <View style={styles.compatibilityScoreContainer}>
-                            <Text style={styles.compatibilityScore}>{compatibilityScore}점</Text>
+                            <Text style={styles.compatibilityScore}>{Math.round(compatibilityScore)}점</Text>
                             <Text style={styles.compatibilityScoreLabel}>100점 만점</Text>
                         </View>
                         
@@ -382,7 +758,7 @@ export default function ChatRoomScreen() {
                         
                         <View style={styles.compatibilityDescription}>
                             <Text style={styles.compatibilityDescriptionText}>
-                                {getCompatibilityDescription(compatibilityScore)}
+                                {verdict || getCompatibilityDescription(compatibilityScore)}
                             </Text>
                         </View>
                     </View>
@@ -504,11 +880,8 @@ export default function ChatRoomScreen() {
             <View style={styles.inputContainer}>
                 <TouchableOpacity 
                     style={styles.topicButton}
-                    onPress={() => {
-                        // 랜덤으로 대화주제 선택해서 바로 채팅창에 전송
-                        const randomTopic = conversationTopics[Math.floor(Math.random() * conversationTopics.length)];
-                        selectTopic(randomTopic);
-                    }}
+                    onPress={handleTopicButtonClick}
+                    disabled={isRequestingTopics}
                 >
                     <Text style={{ fontSize: 20 }}>💡</Text>
                 </TouchableOpacity>
@@ -633,146 +1006,146 @@ export default function ChatRoomScreen() {
                             </TouchableOpacity>
                         </View>
                         
-                        <View style={{ padding: 20, alignItems: 'center' }}>
-                            {/* 프로필 아바타 */}
-                            <TouchableOpacity 
-                                style={{
-                                    width: 100,
-                                    height: 100,
-                                    borderRadius: 50,
-                                    backgroundColor: '#4CAF50',
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    marginBottom: 15,
-                                }}
-                                onPress={() => setShowImageExpandModal(true)}
-                            >
-                                <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>
-                                    {userAvatar}
-                                </Text>
-                            </TouchableOpacity>
-                            
-                            {/* 사용자 정보 */}
-                            <Text style={{
-                                fontSize: 24,
-                                fontWeight: 'bold',
-                                color: '#333',
-                                marginBottom: 5,
-                            }}>
-                                {userName}
-                            </Text>
-                            <Text style={{
-                                fontSize: 16,
-                                color: '#666',
-                                marginBottom: 15,
-                            }}>서울시 · 24세</Text>
-                            
-                            {/* 하트 수 */}
-                            <View style={{ flexDirection: 'row', marginBottom: 20 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
-                                    <AntDesign name="heart" size={16} color="#E53935" />
-                                    <Text style={{
-                                        fontSize: 16,
-                                        fontWeight: 'bold',
-                                        color: '#333',
-                                        marginLeft: 5,
-                                    }}>1,245</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
-                                    <Ionicons name="person" size={16} color="#4CAF50" />
-                                    <Text style={{
-                                        fontSize: 16,
-                                        fontWeight: 'bold',
-                                        color: '#333',
-                                        marginLeft: 5,
-                                    }}>89</Text>
-                                </View>
+                        {isLoadingProfile ? (
+                            <View style={{ padding: 40, alignItems: 'center' }}>
+                                <ActivityIndicator size="large" color="#4CAF50" />
+                                <Text style={{ marginTop: 10, color: '#666' }}>프로필을 불러오는 중...</Text>
                             </View>
-                            
-                            {/* 자기소개 */}
-                            <View style={{ width: '100%', marginBottom: 20 }}>
+                        ) : (
+                            <View style={{ padding: 20, alignItems: 'center' }}>
+                                {/* 프로필 아바타 */}
+                                <TouchableOpacity 
+                                    style={{
+                                        width: 100,
+                                        height: 100,
+                                        borderRadius: 50,
+                                        backgroundColor: '#4CAF50',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        marginBottom: 15,
+                                        overflow: 'hidden',
+                                    }}
+                                    onPress={() => setShowImageExpandModal(true)}
+                                >
+                                    {partnerProfile?.avatar ? (
+                                        <Image 
+                                            source={{ uri: partnerProfile.avatar }}
+                                            style={{ width: 100, height: 100, borderRadius: 50 }}
+                                            resizeMode="cover"
+                                        />
+                                    ) : (
+                                        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>
+                                            {partnerProfile?.username?.substring(0, 2) || partnerProfile?.name?.substring(0, 2) || userName.substring(0, 2)}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                                
+                                {/* 사용자 정보 */}
                                 <Text style={{
-                                    fontSize: 18,
+                                    fontSize: 24,
                                     fontWeight: 'bold',
                                     color: '#333',
-                                    marginBottom: 10,
-                                }}>자기소개</Text>
-                                <Text style={{
-                                    fontSize: 14,
-                                    color: '#666',
-                                    lineHeight: 20,
+                                    marginBottom: 5,
                                 }}>
-                                    안녕하세요! {userName}입니다 ✨ 좋은 사람들과 함께 즐거운 대화 나누고 싶습니다. 많이 친해져요!
+                                    {partnerProfile?.username || partnerProfile?.name || userName}
                                 </Text>
-                            </View>
-                            
-                            {/* 사주 키워드 */}
-                            <View style={{ width: '100%', marginBottom: 20 }}>
                                 <Text style={{
-                                    fontSize: 18,
-                                    fontWeight: 'bold',
-                                    color: '#333',
-                                    marginBottom: 10,
-                                }}>사주 키워드</Text>
-                                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                                    <View style={{
-                                        backgroundColor: '#fff',
-                                        borderWidth: 1,
-                                        borderColor: '#4CAF50',
-                                        borderRadius: 15,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        marginRight: 8,
-                                        marginBottom: 8,
-                                    }}>
+                                    fontSize: 16,
+                                    color: '#666',
+                                    marginBottom: 15,
+                                }}>
+                                    {(() => {
+                                        const location = partnerProfile?.location || '지역 정보 없음';
+                                        const age = partnerProfile?.birthdate ? calculateAge(partnerProfile.birthdate) : null;
+                                        return age ? `${location} · ${age}세` : location;
+                                    })()}
+                                </Text>
+                                
+                                {/* 하트 수 */}
+                                <View style={{ flexDirection: 'row', marginBottom: 20 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
+                                        <AntDesign name="heart" size={16} color="#E53935" />
                                         <Text style={{
-                                            fontSize: 14,
-                                            color: '#4CAF50',
-                                            fontWeight: '500',
-                                        }}>친근함</Text>
+                                            fontSize: 16,
+                                            fontWeight: 'bold',
+                                            color: '#333',
+                                            marginLeft: 5,
+                                        }}>
+                                            {partnerProfile?.likesCount?.toLocaleString() || '0'}
+                                        </Text>
                                     </View>
-                                    <View style={{
-                                        backgroundColor: '#fff',
-                                        borderWidth: 1,
-                                        borderColor: '#4CAF50',
-                                        borderRadius: 15,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        marginRight: 8,
-                                        marginBottom: 8,
-                                    }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 15 }}>
+                                        <Ionicons name="person" size={16} color="#4CAF50" />
                                         <Text style={{
-                                            fontSize: 14,
-                                            color: '#4CAF50',
-                                            fontWeight: '500',
-                                        }}>신뢰</Text>
-                                    </View>
-                                    <View style={{
-                                        backgroundColor: '#fff',
-                                        borderWidth: 1,
-                                        borderColor: '#4CAF50',
-                                        borderRadius: 15,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        marginRight: 8,
-                                        marginBottom: 8,
-                                    }}>
-                                        <Text style={{
-                                            fontSize: 14,
-                                            color: '#4CAF50',
-                                            fontWeight: '500',
-                                        }}>유머</Text>
+                                            fontSize: 16,
+                                            fontWeight: 'bold',
+                                            color: '#333',
+                                            marginLeft: 5,
+                                        }}>
+                                            {partnerProfile?.friendsCount?.toLocaleString() || '0'}
+                                        </Text>
                                     </View>
                                 </View>
-                            </View>
-                            
-                            {/* 좋아요 및 친구 관련 버튼 */}
-                            <View style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                width: '100%',
-                                justifyContent: 'space-between',
-                            }}>
+                                
+                                {/* 자기소개 */}
+                                <View style={{ width: '100%', marginBottom: 20 }}>
+                                    <Text style={{
+                                        fontSize: 18,
+                                        fontWeight: 'bold',
+                                        color: '#333',
+                                        marginBottom: 10,
+                                    }}>자기소개</Text>
+                                    <Text style={{
+                                        fontSize: 14,
+                                        color: '#666',
+                                        lineHeight: 20,
+                                    }}>
+                                        {partnerProfile?.bio || partnerProfile?.description || `안녕하세요! ${partnerProfile?.username || partnerProfile?.name || userName}입니다 ✨ 좋은 사람들과 함께 즐거운 대화 나누고 싶습니다. 많이 친해져요!`}
+                                    </Text>
+                                </View>
+                                
+                                {/* 사주 키워드 */}
+                                {partnerProfile?.sajuKeywords && partnerProfile.sajuKeywords.length > 0 && (
+                                    <View style={{ width: '100%', marginBottom: 20 }}>
+                                        <Text style={{
+                                            fontSize: 18,
+                                            fontWeight: 'bold',
+                                            color: '#333',
+                                            marginBottom: 10,
+                                        }}>사주 키워드</Text>
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                                            {partnerProfile.sajuKeywords.map((keyword: string, index: number) => (
+                                                <View 
+                                                    key={index}
+                                                    style={{
+                                                        backgroundColor: '#fff',
+                                                        borderWidth: 1,
+                                                        borderColor: '#4CAF50',
+                                                        borderRadius: 15,
+                                                        paddingHorizontal: 12,
+                                                        paddingVertical: 6,
+                                                        marginRight: 8,
+                                                        marginBottom: 8,
+                                                    }}
+                                                >
+                                                    <Text style={{
+                                                        fontSize: 14,
+                                                        color: '#4CAF50',
+                                                        fontWeight: '500',
+                                                    }}>{keyword}</Text>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </View>
+                                )}
+                                
+                                {/* 좋아요 및 친구 관련 버튼 */}
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    width: '100%',
+                                    justifyContent: 'space-between',
+                                }}>
                                 <TouchableOpacity 
                                     style={{
                                         backgroundColor: '#f8f9fa',
@@ -784,7 +1157,54 @@ export default function ChatRoomScreen() {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                     }}
-                                    onPress={() => setIsHeartLiked(!isHeartLiked)}
+                                    onPress={async () => {
+                                        if (!partnerId) {
+                                            Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                            return;
+                                        }
+
+                                        const accessToken = await AsyncStorage.getItem('accessToken');
+                                        if (!accessToken) {
+                                            Alert.alert('로그인 필요', '좋아요를 누르려면 로그인이 필요합니다.');
+                                            return;
+                                        }
+
+                                        try {
+                                            if (isHeartLiked) {
+                                                // 좋아요 취소
+                                                const response = await fetch(USER_ENDPOINTS.unlike(partnerId), {
+                                                    method: 'DELETE',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 취소 실패');
+                                                }
+                                                setIsHeartLiked(false);
+                                                // 프로필 재조회
+                                                await fetchPartnerProfile();
+                                            } else {
+                                                // 좋아요 추가
+                                                const response = await fetch(USER_ENDPOINTS.like(partnerId), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                });
+                                                if (!response.ok) {
+                                                    throw new Error('좋아요 추가 실패');
+                                                }
+                                                setIsHeartLiked(true);
+                                                // 프로필 재조회
+                                                await fetchPartnerProfile();
+                                            }
+                                        } catch (error) {
+                                            console.error('좋아요 처리 오류:', error);
+                                            Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+                                        }
+                                    }}
                                 >
                                     <Ionicons 
                                         name={isHeartLiked ? "heart" : "heart-outline"} 
@@ -843,8 +1263,9 @@ export default function ChatRoomScreen() {
                                         <Ionicons name="person-remove" size={20} color="#E53935" />
                                     </TouchableOpacity>
                                 </>
+                                </View>
                             </View>
-                        </View>
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -890,6 +1311,86 @@ export default function ChatRoomScreen() {
                 </TouchableWithoutFeedback>
             </Modal>
 
+
+            {/* 대화 주제 추천 모달 */}
+            <Modal
+                visible={showTopicModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowTopicModal(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setShowTopicModal(false)}>
+                    <View style={{
+                        flex: 1,
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        paddingHorizontal: 20
+                    }}>
+                        <TouchableWithoutFeedback>
+                            <View style={{
+                                backgroundColor: '#fff',
+                                borderRadius: 20,
+                                padding: 20,
+                                width: '100%',
+                                maxWidth: 400,
+                                maxHeight: '80%'
+                            }}>
+                                <View style={{
+                                    flexDirection: 'row',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: 20
+                                }}>
+                                    <Text style={{
+                                        fontSize: 20,
+                                        fontWeight: 'bold',
+                                        color: '#333'
+                                    }}>대화 주제 추천</Text>
+                                    <TouchableOpacity onPress={() => setShowTopicModal(false)}>
+                                        <Ionicons name="close" size={24} color="#333" />
+                                    </TouchableOpacity>
+                                </View>
+                                
+                                <ScrollView>
+                                    {savedTopics.length > 0 ? (
+                                        savedTopics.map((topic, index) => (
+                                            <TouchableOpacity
+                                                key={index}
+                                                style={{
+                                                    backgroundColor: '#E8F5E9',
+                                                    borderRadius: 12,
+                                                    padding: 16,
+                                                    marginBottom: 12
+                                                }}
+                                                onPress={() => {
+                                                    const remainingTopics = savedTopics.filter((_, i) => i !== index);
+                                                    setSavedTopics(remainingTopics);
+                                                    selectTopic(topic);
+                                                    setShowTopicModal(false);
+                                                }}
+                                            >
+                                                <Text style={{
+                                                    fontSize: 14,
+                                                    color: '#2E7D32',
+                                                    lineHeight: 20
+                                                }}>{topic}</Text>
+                                            </TouchableOpacity>
+                                        ))
+                                    ) : (
+                                        <Text style={{
+                                            fontSize: 14,
+                                            color: '#666',
+                                            textAlign: 'center',
+                                            padding: 20
+                                        }}>저장된 대화 주제가 없습니다.</Text>
+                                    )}
+                                </ScrollView>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
 
             {/* 나가기 확인 모달 */}
             {showExitConfirmModal && (
