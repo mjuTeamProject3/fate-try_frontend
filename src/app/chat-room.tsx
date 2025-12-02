@@ -299,15 +299,36 @@ export default function ChatRoomScreen() {
                 try {
                     const accessToken = await AsyncStorage.getItem('accessToken');
                     if (accessToken) {
-                        // JWT 토큰 디코딩 (간단한 방법)
-                        const payload = JSON.parse(atob(accessToken.split('.')[1]));
-                        currentUserIdRef.current = payload.userId;
-                        console.log('[채팅방] 현재 사용자 ID:', currentUserIdRef.current);
+                        try {
+                            // JWT 토큰 디코딩 (간단한 방법)
+                            const parts = accessToken.split('.');
+                            if (parts.length !== 3) {
+                                throw new Error('Invalid JWT token format');
+                            }
+                            const payload = JSON.parse(atob(parts[1]));
+                            // userId를 숫자로 변환 (백엔드에서 숫자로 전송하므로)
+                            const userId = typeof payload.userId === 'number' 
+                                ? payload.userId 
+                                : parseInt(payload.userId, 10);
+                            
+                            if (isNaN(userId)) {
+                                throw new Error('userId is not a valid number');
+                            }
+                            
+                            currentUserIdRef.current = userId;
+                            console.log('[채팅방] 현재 사용자 ID:', currentUserIdRef.current, '(타입:', typeof currentUserIdRef.current, ')');
+                        } catch (decodeError) {
+                            console.error('[채팅방] JWT 디코딩 실패:', decodeError);
+                            // 디코딩 실패 시에도 계속 진행 (최근 메시지 비교로 대체)
+                            currentUserIdRef.current = null;
+                        }
                     } else {
                         console.error('[채팅방] accessToken이 없습니다');
+                        currentUserIdRef.current = null;
                     }
                 } catch (e) {
                     console.error('[채팅방] 사용자 ID 가져오기 실패:', e);
+                    currentUserIdRef.current = null;
                 }
 
                 const socket = await getSocket();
@@ -371,9 +392,14 @@ export default function ChatRoomScreen() {
                     }
 
                     // 내가 보낸 일반 메시지는 무시 (이미 로컬에서 추가했으므로)
-                    // 방법 1: userId 비교
-                    if (currentUserIdRef.current && data.userId === currentUserIdRef.current) {
-                        console.log('[채팅방] 내가 보낸 메시지 무시 (userId 비교):', data.text.substring(0, 20));
+                    // 방법 1: userId 비교 (타입 변환 포함)
+                    const receivedUserId = typeof data.userId === 'number' ? data.userId : parseInt(String(data.userId), 10);
+                    const currentUserId = currentUserIdRef.current !== null 
+                        ? (typeof currentUserIdRef.current === 'number' ? currentUserIdRef.current : parseInt(String(currentUserIdRef.current), 10))
+                        : null;
+                    
+                    if (currentUserId !== null && !isNaN(receivedUserId) && !isNaN(currentUserId) && receivedUserId === currentUserId) {
+                        console.log('[채팅방] 내가 보낸 메시지 무시 (userId 비교):', data.text ? data.text.substring(0, 20) : '이미지', 'userId:', receivedUserId);
                         return;
                     }
                     
@@ -381,12 +407,12 @@ export default function ChatRoomScreen() {
                     const messageTime = new Date(data.ts).getTime();
                     const isRecentSentMessage = recentSentMessagesRef.current.some(msg => {
                         const timeDiff = Math.abs(messageTime - msg.timestamp);
-                        // 텍스트 메시지 비교
-                        if (data.text && msg.text === data.text && timeDiff < 2000) {
+                        // 텍스트 메시지 비교 (2초 이내)
+                        if (data.text && msg.text === data.text && timeDiff < 3000) {
                             return true;
                         }
-                        // 이미지 메시지 비교
-                        if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 2000) {
+                        // 이미지 메시지 비교 (2초 이내)
+                        if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 3000) {
                             return true;
                         }
                         return false;
@@ -397,11 +423,19 @@ export default function ChatRoomScreen() {
                         // 최근 메시지 목록에서 제거 (메모리 절약)
                         recentSentMessagesRef.current = recentSentMessagesRef.current.filter(msg => {
                             const timeDiff = Math.abs(messageTime - msg.timestamp);
-                            if (data.text && msg.text === data.text && timeDiff < 2000) return false;
-                            if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 2000) return false;
+                            if (data.text && msg.text === data.text && timeDiff < 3000) return false;
+                            if (data.imageUrl && msg.text.startsWith('IMAGE:') && msg.text === `IMAGE:${data.imageUrl}` && timeDiff < 3000) return false;
                             return true;
                         });
                         return;
+                    }
+                    
+                    // userId가 설정되지 않았고 최근 메시지도 아닌 경우, 경고 로그 출력
+                    if (currentUserIdRef.current === null) {
+                        console.warn('[채팅방] currentUserIdRef가 설정되지 않음. 메시지를 상대방 메시지로 처리합니다:', {
+                            receivedUserId,
+                            text: data.text ? data.text.substring(0, 20) : '이미지'
+                        });
                     }
 
                     // 상대방이 보낸 일반 메시지만 추가

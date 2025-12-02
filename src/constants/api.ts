@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 // 웹(PC): localhost 사용
 // 모바일(iOS/Android): ngrok 사용 (두 기기가 같은 서버에 접속해야 하므로)
 const LOCAL_API = 'http://localhost:3000/v1/api';
-const NGROK_API = 'https://unkeeled-olympia-selfishly.ngrok-free.dev/v1/api';
+const NGROK_API = 'https://fatetry.ngrok.app/v1/api';
 
 // 환경 변수가 있으면 우선 사용, 없으면 플랫폼에 따라 자동 선택
 export const API_BASE_URL = 
