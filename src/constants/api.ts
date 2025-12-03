@@ -2,14 +2,35 @@ import { Platform } from 'react-native';
 
 // 백엔드 API 기본 URL 설정
 // 웹(PC): localhost 사용
-// 모바일(iOS/Android): ngrok 사용 (두 기기가 같은 서버에 접속해야 하므로)
+// 모바일(iOS/Android): 환경 변수 또는 ngrok 사용
 const LOCAL_API = 'http://localhost:3000/v1/api';
-const NGROK_API = 'https://fatetry.ngrok.app/v1/api';
 
 // 환경 변수가 있으면 우선 사용, 없으면 플랫폼에 따라 자동 선택
-export const API_BASE_URL = 
-  process.env.EXPO_PUBLIC_API_URL || 
-  (Platform.OS === 'web' ? LOCAL_API : NGROK_API);
+export const API_BASE_URL = (() => {
+  // 1. 환경 변수가 있으면 우선 사용 (가장 우선순위 높음)
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  
+  // 2. 웹이면 localhost
+  if (Platform.OS === 'web') {
+    return LOCAL_API;
+  }
+  
+  // 3. 모바일: 기본값은 ngrok URL
+  // ⚠️ ngrok 734 오류 발생 시:
+  // - ngrok을 다시 실행하고 새로운 URL을 환경 변수로 설정
+  // - 또는 PC의 로컬 IP 사용 (같은 Wi-Fi에 연결된 경우)
+  // - 예: EXPO_PUBLIC_API_URL=http://192.168.0.100:3000/v1/api
+  const defaultNgrokUrl = 'https://fatetry.ngrok.app/v1/api';
+  
+  // 개발 중 정보 (경고 제거 - ngrok이 정상 작동 중이면 불필요)
+  if (__DEV__) {
+    console.log('[API] 📡 API Base URL:', defaultNgrokUrl);
+  }
+  
+  return defaultNgrokUrl;
+})();
 
 // 소셜 로그인 엔드포인트
 export const AUTH_ENDPOINTS = {
@@ -62,7 +83,12 @@ export const NOTIFICATION_ENDPOINTS = {
         if (params) {
             Object.entries(params).forEach(([key, value]) => {
                 if (value !== undefined) {
-                    url.searchParams.append(key, String(value));
+                    // take 파라미터는 숫자로 변환하여 전달
+                    if (key === 'take' && typeof value === 'number') {
+                        url.searchParams.append(key, value.toString());
+                    } else {
+                        url.searchParams.append(key, String(value));
+                    }
                 }
             });
         }
@@ -70,5 +96,31 @@ export const NOTIFICATION_ENDPOINTS = {
     },
     readNotification: (notifId: number) => `${API_BASE_URL}/notification/${notifId}/read`,
     processFriendRequest: (notifId: number) => `${API_BASE_URL}/notification/${notifId}/friend-request/process`,
+};
+
+// 이미지 업로드 엔드포인트
+export const UPLOAD_ENDPOINTS = {
+    image: `${API_BASE_URL}/upload/image`,
+};
+
+// 안전한 JSON 파싱 헬퍼 함수
+export const safeJsonParse = async (response: Response): Promise<any> => {
+    const contentType = response.headers.get('content-type');
+    
+    // Content-Type이 JSON이 아니면 텍스트로 반환
+    if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 100)}`);
+    }
+    
+    try {
+        const text = await response.text();
+        if (!text) {
+            return null;
+        }
+        return JSON.parse(text);
+    } catch (error) {
+        throw new Error(`Failed to parse JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
 };
 

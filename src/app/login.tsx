@@ -39,6 +39,17 @@ export default function LoginScreen() {
 
     // 사용자 상태 확인 (기존 사용자/신규 사용자 구분)
     useEffect(() => {
+        let isMounted = true;
+        
+        // 전체 타임아웃: 8초 후 강제 완료
+        const globalTimeout = setTimeout(() => {
+            if (isMounted) {
+                console.log('⏱️ 사용자 상태 확인 타임아웃 - 기본값 사용');
+                setShowAdditionalInfo(true); // 안전하게 신규 사용자로 처리
+                setIsCheckingUser(false);
+            }
+        }, 8000);
+        
         const checkUserStatus = async () => {
             setIsCheckingUser(true);
             
@@ -47,26 +58,59 @@ export default function LoginScreen() {
                 
                 // 토큰이 없거나 임시 토큰이면 신규 사용자로 간주
                 if (!accessToken || accessToken.startsWith('temp_')) {
-                    setShowAdditionalInfo(true);
-                    setIsCheckingUser(false);
+                    if (isMounted) {
+                        setShowAdditionalInfo(true);
+                        setIsCheckingUser(false);
+                    }
+                    clearTimeout(globalTimeout);
                     return;
                 }
                 
-                // 서버에 사용자 프로필 조회
+                // 서버에 사용자 프로필 조회 (타임아웃 추가)
                 try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5초 타임아웃
+                    
                     const response = await fetch(USER_ENDPOINTS.getProfile, {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
                             'Content-Type': 'application/json',
                         },
+                        signal: controller.signal,
                     });
                     
+                    clearTimeout(timeoutId);
+                    
                     if (response.ok) {
-                        const data = await response.json();
-                        const user = data.success;
+                        // 안전한 JSON 파싱
+                        let data;
+                        try {
+                            const contentType = response.headers.get('content-type');
+                            if (!contentType || !contentType.includes('application/json')) {
+                                const text = await response.text();
+                                throw new Error(`Expected JSON but got ${contentType}`);
+                            }
+                            const text = await response.text();
+                            data = text ? JSON.parse(text) : null;
+                        } catch (parseError) {
+                            console.error('프로필 JSON 파싱 오류:', parseError);
+                            if (isMounted) {
+                                setShowAdditionalInfo(true);
+                                setIsCheckingUser(false);
+                            }
+                            clearTimeout(globalTimeout);
+                            return;
+                        }
+                        
+                        const user = data?.success;
+                        
+                        if (!isMounted) {
+                            clearTimeout(globalTimeout);
+                            return;
+                        }
                         
                         // 프로필이 완성되어 있는지 확인
-                        if (user.birthdate && user.location && user.username) {
+                        if (user && user.birthdate && user.location && user.username) {
                             // 기존 사용자 → 추가 정보 입력 숨김
                             setShowAdditionalInfo(false);
                             console.log('✅ 기존 사용자 확인, 추가 정보 입력 숨김');
@@ -77,21 +121,39 @@ export default function LoginScreen() {
                         }
                     } else {
                         // 토큰 무효 → 추가 정보 입력 표시
+                        if (isMounted) {
+                            setShowAdditionalInfo(true);
+                        }
+                    }
+                } catch (error: any) {
+                    if (error.name === 'AbortError') {
+                        console.log('⏱️ 프로필 조회 타임아웃');
+                    } else {
+                        console.error('프로필 조회 실패:', error);
+                    }
+                    if (isMounted) {
                         setShowAdditionalInfo(true);
                     }
-                } catch (error) {
-                    console.error('프로필 조회 실패:', error);
-                    setShowAdditionalInfo(true);
                 }
             } catch (error) {
                 console.error('사용자 상태 확인 오류:', error);
-                setShowAdditionalInfo(true);
+                if (isMounted) {
+                    setShowAdditionalInfo(true);
+                }
             } finally {
-                setIsCheckingUser(false);
+                if (isMounted) {
+                    setIsCheckingUser(false);
+                }
+                clearTimeout(globalTimeout);
             }
         };
         
         checkUserStatus();
+        
+        return () => {
+            isMounted = false;
+            clearTimeout(globalTimeout);
+        };
     }, []);
 
     // 생년월일 유효성 검사
@@ -269,6 +331,18 @@ export default function LoginScreen() {
                 }
                 await AsyncStorage.setItem('loginProvider', provider);
                 await AsyncStorage.setItem('isLoggedIn', 'true');
+                
+                // 로그인 성공 이벤트 발생 (이벤트 버스를 통해 _layout.tsx에 알림)
+                const bus = (global as any).__APP_EVENT_BUS__;
+                if (bus && bus.listeners) {
+                    bus.listeners.forEach((listener: any) => {
+                        try {
+                            listener({ type: 'login_success' });
+                        } catch (err) {
+                            console.error('이벤트 리스너 오류:', err);
+                        }
+                    });
+                }
                 
                 // 추가 정보는 이미 입력했으므로 항상 홈 화면으로
                 console.log('✅ 로그인 성공, 홈 화면으로 이동');

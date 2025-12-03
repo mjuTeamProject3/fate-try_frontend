@@ -1,22 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { Socket } from 'socket.io-client';
+import { getSocket, disconnectSocket } from '@/utils/socket';
 import styles from '@/styles/RandomVideoStyles';
 
 const RandomVideoWaitingScreen = () => {
     const [elapsedTime, setElapsedTime] = useState(0);
-    const [queueCount, setQueueCount] = useState(89);
+    const [queueCount, setQueueCount] = useState(0);
     const [isCameraOn, setIsCameraOn] = useState(true);
     const [isMicrophoneOn, setIsMicrophoneOn] = useState(true);
     const [rotationValue] = useState(new Animated.Value(0));
+    const socketRef = useRef<Socket | null>(null);
 
     // 경과 시간 업데이트
     useEffect(() => {
         const timer = setInterval(() => {
             setElapsedTime(prev => prev + 1);
-            // 큐 카운트 랜덤하게 변경
-            setQueueCount(prev => Math.max(1, prev + Math.floor(Math.random() * 3) - 1));
         }, 1000);
 
         return () => clearInterval(timer);
@@ -42,16 +43,102 @@ const RandomVideoWaitingScreen = () => {
         outputRange: ['0deg', '360deg'],
     });
     
-    // 매칭 시뮬레이션 (5-10초 후 매칭)
+    // Socket.io 연결 및 매칭 큐 참여
     useEffect(() => {
-        const matchTimer = setTimeout(() => {
-            router.push('/random-video-room');
-        }, Math.random() * 5000 + 5000); // 5-10초 랜덤
+        let mounted = true;
 
-        return () => clearTimeout(matchTimer);
+        const initSocketConnection = async () => {
+            try {
+                const socket = await getSocket();
+                if (!socket) {
+                    console.error('[랜덤 영상] Socket 연결 실패');
+                    if (mounted) {
+                        router.back();
+                    }
+                    return;
+                }
+
+                socketRef.current = socket;
+
+                // 매칭 큐에 참여
+                socket.emit('queue:join', { type: 'video' });
+                console.log('[랜덤 영상] 매칭 큐에 참여');
+
+                // 매칭 성공 이벤트 리스너
+                socket.on('match:found', (data: {
+                    roomId: string;
+                    userId: number;
+                    partnerId: number;
+                    partnerUsername: string | null;
+                    compatibility: {
+                        score: number | null;
+                        finalScore: number | null;
+                        verdict: string | null;
+                    };
+                    type: string;
+                    compatibilityVisible: boolean;
+                    isInitiator: boolean;
+                }) => {
+                    console.log('[랜덤 영상] 매칭 성공:', data);
+                    if (mounted) {
+                        // 영상통화방으로 이동
+                        router.push({
+                            pathname: '/random-video-room',
+                            params: {
+                                roomId: data.roomId,
+                                partnerId: String(data.partnerId),
+                                partnerUsername: data.partnerUsername || '사용자',
+                                compatibilityScore: data.compatibility.finalScore 
+                                    ? String(data.compatibility.finalScore) 
+                                    : data.compatibility.score 
+                                    ? String(data.compatibility.score) 
+                                    : '0',
+                                verdict: data.compatibility.verdict || '',
+                                isInitiator: data.isInitiator ? 'true' : 'false',
+                            }
+                        });
+                    }
+                });
+
+                // 대기 중 이벤트 리스너
+                socket.on('queue:waiting', (data: { position: number; type: string }) => {
+                    console.log('[랜덤 영상] 대기 중:', data);
+                    if (mounted && data.position !== undefined) {
+                        setQueueCount(data.position);
+                    }
+                });
+
+                // 연결 에러 처리
+                socket.on('connect_error', (error) => {
+                    console.error('[랜덤 영상] 연결 에러:', error);
+                });
+            } catch (error) {
+                console.error('[랜덤 영상] 초기화 오류:', error);
+                if (mounted) {
+                    router.back();
+                }
+            }
+        };
+
+        initSocketConnection();
+
+        return () => {
+            mounted = false;
+            if (socketRef.current) {
+                socketRef.current.off('match:found');
+                socketRef.current.off('queue:waiting');
+                socketRef.current.off('connect_error');
+                // 큐에서 나가기
+                socketRef.current.emit('queue:leave', { type: 'video' });
+            }
+        };
     }, []);
 
-    const handleCancel = () => {
+    const handleCancel = async () => {
+        // 큐에서 나가기
+        if (socketRef.current) {
+            socketRef.current.emit('queue:leave', { type: 'video' });
+        }
         router.back();
     };
 

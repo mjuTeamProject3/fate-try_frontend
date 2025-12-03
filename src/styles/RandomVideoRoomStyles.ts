@@ -14,7 +14,7 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
     },
-    partnerVideo: {
+    partnerVideoContainer: {
         position: 'absolute',
         top: 0,
         left: 0,
@@ -22,7 +22,26 @@ const styles = StyleSheet.create({
         bottom: 0,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#333',
+        zIndex: 1,
+        elevation: 1, // Android
+    },
+    partnerVideo: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: '#000',
+    },
+    partnerVideoPlaceholder: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#000',
     },
     partnerAvatar: {
         width: 120,
@@ -42,15 +61,17 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 120,
         right: 20,
-        width: 120,
-        height: 160,
+        width: 150,
+        height: 200,
+        zIndex: 1000,
+        elevation: 100, // Android에서 z-index 대신 사용
     },
     myVideo: {
-        flex: 1,
+        width: '100%',
+        height: '100%',
         backgroundColor: '#666',
         borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
+        overflow: 'hidden',
     },
     myAvatar: {
         width: 60,
@@ -68,6 +89,8 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 15,
         minWidth: 120,
+        zIndex: 100,
+        elevation: 10,
     },
     compatibilityHeader: {
         alignItems: 'center',
@@ -106,6 +129,8 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'center',
         alignItems: 'center',
+        zIndex: 100,
+        elevation: 10,
     },
     partnerProfileAvatar: {
         width: 40,
@@ -128,6 +153,8 @@ const styles = StyleSheet.create({
         paddingBottom: 30, // 하단 안전 영역 고려
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         gap: 20,
+        zIndex: 100,
+        elevation: 10,
     },
     controlButton: {
         width: 50,

@@ -8,8 +8,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Socket } from 'socket.io-client';
 import styles from '@/styles/ChatRoomStyles';
 import ImageModal from '@/components/ImageModal';
-import { getSocket } from '@/utils/socket';
-import { USER_ENDPOINTS } from '@/constants/api';
+import { getSocket, disconnectSocket } from '@/utils/socket';
+import { USER_ENDPOINTS, UPLOAD_ENDPOINTS, API_BASE_URL } from '@/constants/api';
 
 // 채팅 메시지 인터페이스
 interface Message {
@@ -45,6 +45,10 @@ export default function ChatRoomScreen() {
     const currentUserIdRef = useRef<number | null>(null);
     // 최근 전송한 메시지 추적 (중복 방지용)
     const recentSentMessagesRef = useRef<Array<{ text: string; timestamp: number }>>([]);
+    // 버튼 클릭으로 요청한 경우 자동 전송 플래그
+    const shouldAutoSendTopicRef = useRef<boolean>(false);
+    // 페이지 이동 중인지 추적 (소켓 에러 무시용)
+    const isNavigatingAwayRef = useRef<boolean>(false);
     
     // 채팅방에 들어왔을 때 읽음 처리
     useEffect(() => {
@@ -100,6 +104,8 @@ export default function ChatRoomScreen() {
     const [savedTopics, setSavedTopics] = useState<string[]>([]);
     // 대화주제 요청 중인지 여부
     const [isRequestingTopics, setIsRequestingTopics] = useState(false);
+    // 방 전체에서 최대 요청 횟수 도달 여부 (서버에서 관리)
+    const [isMaxTopicsReached, setIsMaxTopicsReached] = useState<boolean>(false);
     
     // 대화주제 선택 함수 (주제를 바로 화면에 표시)
     const selectTopic = (topic: string) => {
@@ -131,6 +137,17 @@ export default function ChatRoomScreen() {
     // 전구 버튼 클릭 핸들러
     const handleTopicButtonClick = async () => {
         if (isRandom && socketRef.current && roomId) {
+            // 최대 요청 횟수 도달 체크
+            if (isMaxTopicsReached) {
+                Alert.alert('알림', '이 채팅방에서는 더 이상 대화 주제를 추천받을 수 없습니다.');
+                return;
+            }
+            
+            // 이미 요청 중이면 무시 (중복 요청 방지)
+            if (isRequestingTopics) {
+                return;
+            }
+            
             // 저장된 주제가 있으면 1개씩 꺼내서 바로 표시
             if (savedTopics.length > 0) {
                 const topic = savedTopics[0];
@@ -140,11 +157,10 @@ export default function ChatRoomScreen() {
                 return;
             }
             
-            // 저장된 주제가 없으면 요청
-            if (!isRequestingTopics) {
-                setIsRequestingTopics(true);
-                socketRef.current.emit('topics:suggest', { roomId, context: '' });
-            }
+            // 저장된 주제가 없으면 요청 (자동 전송 플래그 설정)
+            setIsRequestingTopics(true);
+            shouldAutoSendTopicRef.current = true;
+            socketRef.current.emit('topics:suggest', { roomId, context: '' });
         } else {
             // 일반 채팅이면 기존 방식 (랜덤 선택)
             const randomTopic = savedTopics[Math.floor(Math.random() * savedTopics.length)];
@@ -305,14 +321,19 @@ export default function ChatRoomScreen() {
                             if (parts.length !== 3) {
                                 throw new Error('Invalid JWT token format');
                             }
-                            const payload = JSON.parse(atob(parts[1]));
-                            // userId를 숫자로 변환 (백엔드에서 숫자로 전송하므로)
-                            const userId = typeof payload.userId === 'number' 
-                                ? payload.userId 
-                                : parseInt(payload.userId, 10);
+                            const decoded = JSON.parse(atob(parts[1]));
+                            // 백엔드 JWT 구조: { payload: { userId, type, issuer }, iat, exp }
+                            // 따라서 payload.payload.userId로 접근해야 함
+                            const payload = decoded.payload || decoded;
+                            const userIdValue = payload.userId;
+                            
+                            // userId를 숫자로 변환
+                            const userId = typeof userIdValue === 'number' 
+                                ? userIdValue 
+                                : parseInt(String(userIdValue), 10);
                             
                             if (isNaN(userId)) {
-                                throw new Error('userId is not a valid number');
+                                throw new Error(`userId is not a valid number: ${userIdValue}`);
                             }
                             
                             currentUserIdRef.current = userId;
@@ -343,6 +364,27 @@ export default function ChatRoomScreen() {
                 // 단, roomId를 확인하여 연결 상태 확인
                 console.log('[채팅방] Socket 연결 완료, roomId:', roomId, 'currentUserId:', currentUserIdRef.current);
 
+                // 입장 시 자동 요청 제거 (서버에서 첫 요청 시 주제 생성)
+
+                // 소켓 에러 핸들러 (페이지 이동 중인 경우 에러 무시)
+                socket.on('connect_error', (error) => {
+                    if (isNavigatingAwayRef.current) {
+                        // 페이지 이동 중이면 에러 무시
+                        console.log('[채팅방] 페이지 이동 중이므로 소켓 에러 무시');
+                        return;
+                    }
+                    console.error('[채팅방] Socket 연결 에러:', error);
+                });
+
+                socket.on('error', (error) => {
+                    if (isNavigatingAwayRef.current) {
+                        // 페이지 이동 중이면 에러 무시
+                        console.log('[채팅방] 페이지 이동 중이므로 소켓 에러 무시');
+                        return;
+                    }
+                    console.error('[채팅방] Socket 에러:', error);
+                });
+
                 // 메시지 수신 이벤트 리스너
                 socket.on('message:new', (data: {
                     userId: number;
@@ -362,23 +404,8 @@ export default function ChatRoomScreen() {
 
                     // 시스템 메시지(대화 주제 추천)인 경우 양쪽 모두에게 표시
                     if (data.isSystem) {
-                        // 중복 체크: 최근 전송한 메시지와 비교
-                        const messageTime = new Date(data.ts).getTime();
-                        const isRecentSentMessage = recentSentMessagesRef.current.some(msg => {
-                            const timeDiff = Math.abs(messageTime - msg.timestamp);
-                            return msg.text === data.text && timeDiff < 2000; // 2초 이내
-                        });
-                        
-                        if (isRecentSentMessage) {
-                            console.log('[채팅방] 내가 보낸 시스템 메시지 무시:', data.text.substring(0, 20));
-                            // 최근 메시지 목록에서 제거 (메모리 절약)
-                            recentSentMessagesRef.current = recentSentMessagesRef.current.filter(msg => {
-                                const timeDiff = Math.abs(messageTime - msg.timestamp);
-                                return !(msg.text === data.text && timeDiff < 2000);
-                            });
-                            return;
-                        }
-                        
+                        // 시스템 메시지는 양쪽 모두에게 보여야 하므로 항상 표시
+                        // 중복 체크는 서버에서 이미 처리되므로 클라이언트에서는 하지 않음
                         const newMessage: Message = {
                             id: messageIdCounter.current++,
                             text: data.text,
@@ -388,6 +415,13 @@ export default function ChatRoomScreen() {
                             image: data.imageUrl || undefined,
                         };
                         setMessages(prev => [...prev, newMessage]);
+                        
+                        // 최근 전송한 메시지 목록에서 제거 (이미 표시되었으므로)
+                        const messageTime = new Date(data.ts).getTime();
+                        recentSentMessagesRef.current = recentSentMessagesRef.current.filter(msg => {
+                            const timeDiff = Math.abs(messageTime - msg.timestamp);
+                            return !(msg.text === data.text && timeDiff < 5000);
+                        });
                         return;
                     }
 
@@ -451,23 +485,73 @@ export default function ChatRoomScreen() {
                     setMessages(prev => [...prev, newMessage]);
                 });
 
-                // 채팅 종료 이벤트
-                socket.on('chat:ended', (data: { reason: string }) => {
-                    console.log('[채팅방] 채팅 종료:', data.reason);
+                // 신고 성공 이벤트 (신고한 사람에게만 전송)
+                socket.on('user:reported', (data: { ok: boolean, error?: string }) => {
+                    if (!mounted) return;
+                    if (data.ok) {
+                        Alert.alert('신고 접수', '신고가 접수되었습니다.', [
+                            { 
+                                text: '확인', 
+                                onPress: () => {
+                                    // 페이지 이동 중 플래그 설정
+                                    isNavigatingAwayRef.current = true;
+                                    // 소켓 명시적 disconnect
+                                    if (socketRef.current) {
+                                        socketRef.current.disconnect();
+                                        socketRef.current = null;
+                                    }
+                                    disconnectSocket();
+                                    // 페이지 이동
+                                    router.replace('/(tabs)');
+                                }
+                            }
+                        ]);
+                    } else {
+                        Alert.alert('오류', data.error || '신고 처리 중 오류가 발생했습니다.');
+                    }
+                });
+
+                // 채팅 종료 이벤트 (신고당한 사람에게만 전송)
+                socket.on('chat:ended', (data: { reason: string, reporterId?: number }) => {
+                    console.log('[채팅방] 채팅 종료:', data.reason, 'reporterId:', data.reporterId);
                     if (mounted) {
-                        const message = data.reason === 'reported' 
-                            ? '상대의 신고로 인해 채팅이 종료되었습니다.' 
-                            : '상대방이 채팅방을 나갔습니다.';
+                        let message = '';
+                        if (data.reason === 'reported') {
+                            message = '상대의 신고로 인해 채팅이 종료되었습니다.';
+                        } else {
+                            message = '상대방이 채팅방을 나갔습니다.';
+                        }
                         Alert.alert('채팅 종료', message, [
-                            { text: '확인', onPress: () => router.replace('/(tabs)') }
+                            { 
+                                text: '확인', 
+                                onPress: () => {
+                                    // 페이지 이동 중 플래그 설정
+                                    isNavigatingAwayRef.current = true;
+                                    // 소켓 명시적 disconnect
+                                    if (socketRef.current) {
+                                        socketRef.current.disconnect();
+                                        socketRef.current = null;
+                                    }
+                                    disconnectSocket();
+                                    // 페이지 이동
+                                    router.replace('/(tabs)');
+                                }
+                            }
                         ]);
                     }
                 });
 
                 // 대화 주제 수신 이벤트
-                socket.on('topics:list', (data: { topics: Array<{ topic: string }> | string[] }) => {
+                socket.on('topics:list', (data: { topics: Array<{ topic: string }> | string[], maxReached?: boolean }) => {
                     if (!mounted) return;
                     setIsRequestingTopics(false);
+                    
+                    // 최대 요청 횟수 도달 체크
+                    if (data.maxReached) {
+                        setIsMaxTopicsReached(true);
+                        Alert.alert('알림', '이 채팅방에서는 더 이상 대화 주제를 추천받을 수 없습니다.');
+                        return;
+                    }
                     
                     // topics가 객체 배열인지 문자열 배열인지 확인
                     const topics = Array.isArray(data.topics) && data.topics.length > 0
@@ -477,15 +561,17 @@ export default function ChatRoomScreen() {
                         : [];
                     
                     if (topics.length > 0) {
-                        // 첫 번째 주제는 바로 표시
-                        const firstTopic = topics[0];
-                        const remainingTopics = topics.slice(1);
-                        
-                        // 나머지 주제는 저장
-                        setSavedTopics(remainingTopics);
-                        
-                        // 첫 번째 주제를 바로 화면에 표시
-                        selectTopic(firstTopic);
+                        // 버튼 클릭으로 요청한 경우 첫 번째 주제 자동 전송
+                        if (shouldAutoSendTopicRef.current) {
+                            const firstTopic = topics[0];
+                            const remainingTopics = topics.slice(1);
+                            setSavedTopics(remainingTopics);
+                            selectTopic(firstTopic);
+                            shouldAutoSendTopicRef.current = false; // 플래그 리셋
+                        } else {
+                            // 공통 주제 목록 저장 (서버에서 관리하는 공통 주제)
+                            setSavedTopics(topics);
+                        }
                     } else {
                         Alert.alert('알림', '대화 주제를 가져올 수 없습니다.');
                     }
@@ -505,11 +591,18 @@ export default function ChatRoomScreen() {
 
         return () => {
             mounted = false;
+            isNavigatingAwayRef.current = true; // cleanup 시 페이지 이동 중으로 표시
             if (socketRef.current) {
                 socketRef.current.off('message:new');
+                socketRef.current.off('user:reported');
                 socketRef.current.off('chat:ended');
                 socketRef.current.off('topics:list');
                 socketRef.current.off('topics:already');
+                socketRef.current.off('connect_error');
+                socketRef.current.off('error');
+                // 소켓 disconnect
+                socketRef.current.disconnect();
+                socketRef.current = null;
             }
         };
     }, [isRandom, roomId, partnerId]);
@@ -602,6 +695,54 @@ export default function ChatRoomScreen() {
         return '나쁘지 않은 궁합이에요. 서로 배려하고 이해한다면 좋은 관계가 될 거예요. ⭐';
     };
     
+    // 이미지 업로드 함수
+    const uploadImage = async (imageUri: string): Promise<string | null> => {
+        try {
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                Alert.alert('오류', '로그인이 필요합니다.');
+                return null;
+            }
+
+            // FormData 생성
+            const formData = new FormData();
+            const filename = imageUri.split('/').pop() || 'image.jpg';
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : 'image/jpeg';
+            
+            formData.append('file', {
+                uri: imageUri,
+                name: filename,
+                type: type,
+            } as any);
+
+            // 서버에 업로드
+            const response = await fetch(UPLOAD_ENDPOINTS.image, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error('이미지 업로드 실패');
+            }
+
+            const data = await response.json();
+            // 백엔드에서 반환하는 url이 상대 경로이므로 절대 경로로 변환
+            const imageUrl = data.url.startsWith('http') 
+                ? data.url 
+                : `${API_BASE_URL.replace('/v1/api', '')}${data.url}`;
+            
+            return imageUrl;
+        } catch (error) {
+            console.error('이미지 업로드 오류:', error);
+            Alert.alert('오류', '이미지 업로드 중 문제가 발생했습니다.');
+            return null;
+        }
+    };
+    
     // 갤러리에서 사진 선택
     const pickImageFromGallery = async () => {
         try {
@@ -625,7 +766,7 @@ export default function ChatRoomScreen() {
                 const imageUri = result.assets[0].uri;
                 const now = Date.now();
                 
-                // 로컬 메시지 추가 (먼저 추가)
+                // 로컬 메시지 추가 (먼저 추가 - 로컬 URI 사용)
                 const newMessage: Message = {
                     id: messageIdCounter.current++,
                     text: '',
@@ -634,24 +775,38 @@ export default function ChatRoomScreen() {
                     image: imageUri
                 };
                 
-                // 최근 전송한 메시지 목록에 추가 (중복 방지용, 이미지는 URI로 구분)
-                recentSentMessagesRef.current.push({ text: `IMAGE:${imageUri}`, timestamp: now });
-                if (recentSentMessagesRef.current.length > 10) {
-                    recentSentMessagesRef.current.shift();
-                }
-                
                 setMessages(prev => [...prev, newMessage]);
                 setShowImageModal(false);
                 
-                // 랜덤 채팅이면 Socket.io로 이미지 전송
+                // 랜덤 채팅이면 서버에 이미지 업로드 후 Socket.io로 전송
                 if (isRandom && socketRef.current && roomId) {
-                    // 실제 구현에서는 이미지를 서버에 업로드하고 URL을 받아야 함
-                    // 여기서는 일단 로컬 URI를 전송 (실제로는 서버 URL이어야 함)
-                    socketRef.current.emit('message:send', {
-                        roomId,
-                        text: '',
-                        imageUrl: imageUri, // 실제로는 서버에 업로드한 URL
-                    });
+                    // 이미지 업로드
+                    const uploadedImageUrl = await uploadImage(imageUri);
+                    
+                    if (uploadedImageUrl) {
+                        // 업로드된 URL로 메시지 업데이트 (로컬 URI를 서버 URL로 교체)
+                        setMessages(prev => prev.map(msg => 
+                            msg.id === newMessage.id 
+                                ? { ...msg, image: uploadedImageUrl }
+                                : msg
+                        ));
+                        
+                        // 최근 전송한 메시지 목록에 추가 (중복 방지용)
+                        recentSentMessagesRef.current.push({ text: `IMAGE:${uploadedImageUrl}`, timestamp: now });
+                        if (recentSentMessagesRef.current.length > 10) {
+                            recentSentMessagesRef.current.shift();
+                        }
+                        
+                        // Socket.io로 서버 URL 전송
+                        socketRef.current.emit('message:send', {
+                            roomId,
+                            text: '',
+                            imageUrl: uploadedImageUrl,
+                        });
+                    } else {
+                        // 업로드 실패 시 로컬 메시지 제거
+                        setMessages(prev => prev.filter(msg => msg.id !== newMessage.id));
+                    }
                 }
             }
         } catch (error) {
@@ -682,7 +837,7 @@ export default function ChatRoomScreen() {
                 const imageUri = result.assets[0].uri;
                 const now = Date.now();
                 
-                // 로컬 메시지 추가 (먼저 추가)
+                // 로컬 메시지 추가 (먼저 추가 - 로컬 URI 사용)
                 const newMessage: Message = {
                     id: messageIdCounter.current++,
                     text: '',
@@ -691,24 +846,38 @@ export default function ChatRoomScreen() {
                     image: imageUri
                 };
                 
-                // 최근 전송한 메시지 목록에 추가 (중복 방지용, 이미지는 URI로 구분)
-                recentSentMessagesRef.current.push({ text: `IMAGE:${imageUri}`, timestamp: now });
-                if (recentSentMessagesRef.current.length > 10) {
-                    recentSentMessagesRef.current.shift();
-                }
-                
                 setMessages(prev => [...prev, newMessage]);
                 setShowImageModal(false);
                 
-                // 랜덤 채팅이면 Socket.io로 이미지 전송
+                // 랜덤 채팅이면 서버에 이미지 업로드 후 Socket.io로 전송
                 if (isRandom && socketRef.current && roomId) {
-                    // 실제 구현에서는 이미지를 서버에 업로드하고 URL을 받아야 함
-                    // 여기서는 일단 로컬 URI를 전송 (실제로는 서버 URL이어야 함)
-                    socketRef.current.emit('message:send', {
-                        roomId,
-                        text: '',
-                        imageUrl: imageUri, // 실제로는 서버에 업로드한 URL
-                    });
+                    // 이미지 업로드
+                    const uploadedImageUrl = await uploadImage(imageUri);
+                    
+                    if (uploadedImageUrl) {
+                        // 업로드된 URL로 메시지 업데이트 (로컬 URI를 서버 URL로 교체)
+                        setMessages(prev => prev.map(msg => 
+                            msg.id === newMessage.id 
+                                ? { ...msg, image: uploadedImageUrl }
+                                : msg
+                        ));
+                        
+                        // 최근 전송한 메시지 목록에 추가 (중복 방지용)
+                        recentSentMessagesRef.current.push({ text: `IMAGE:${uploadedImageUrl}`, timestamp: now });
+                        if (recentSentMessagesRef.current.length > 10) {
+                            recentSentMessagesRef.current.shift();
+                        }
+                        
+                        // Socket.io로 서버 URL 전송
+                        socketRef.current.emit('message:send', {
+                            roomId,
+                            text: '',
+                            imageUrl: uploadedImageUrl,
+                        });
+                    } else {
+                        // 업로드 실패 시 로컬 메시지 제거
+                        setMessages(prev => prev.filter(msg => msg.id !== newMessage.id));
+                    }
                 }
             }
         } catch (error) {
@@ -1160,13 +1329,21 @@ export default function ChatRoomScreen() {
                                                         paddingVertical: 6,
                                                         marginRight: 8,
                                                         marginBottom: 8,
+                                                        maxWidth: '48%',
+                                                        minWidth: 0,
                                                     }}
                                                 >
-                                                    <Text style={{
-                                                        fontSize: 14,
-                                                        color: '#4CAF50',
-                                                        fontWeight: '500',
-                                                    }}>{keyword}</Text>
+                                                    <Text 
+                                                        style={{
+                                                            fontSize: 14,
+                                                            color: '#4CAF50',
+                                                            fontWeight: '500',
+                                                            flexShrink: 1,
+                                                        }}
+                                                        numberOfLines={3}
+                                                    >
+                                                        {keyword}
+                                                    </Text>
                                                 </View>
                                             ))}
                                         </View>

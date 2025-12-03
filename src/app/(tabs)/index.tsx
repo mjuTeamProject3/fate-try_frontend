@@ -20,6 +20,7 @@ interface RankingItem {
     score: number;
     icon: string;
     image?: any; // 프로필 이미지 (선택적)
+    friendsCount?: number; // 친구 수 (선택적)
 }
 
 const HomeScreen = () => {
@@ -179,7 +180,29 @@ const HomeScreen = () => {
                 console.log('❌ 응답 상태:', response.status);
                 throw new Error('전체 랭킹 로드 실패');
             }
-            const data = await response.json();
+            
+            // 안전한 JSON 파싱
+            let data;
+            try {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 100)}`);
+                }
+                const text = await response.text();
+                data = text ? JSON.parse(text) : null;
+            } catch (parseError) {
+                console.error('❌ JSON 파싱 오류:', parseError);
+                throw new Error('응답 파싱 실패');
+            }
+            
+            // 배열인지 확인
+            if (!Array.isArray(data)) {
+                console.error('❌ 예상과 다른 응답 형식:', typeof data);
+                setOverallRanking([]);
+                return;
+            }
+            
             const transformed = transformRankingData(data);
             setOverallRanking(transformed);
         } catch (error) {
@@ -204,7 +227,29 @@ const HomeScreen = () => {
                 console.log('❌ 응답 상태:', response.status);
                 throw new Error('월간 랭킹 로드 실패');
             }
-            const data = await response.json();
+            
+            // 안전한 JSON 파싱
+            let data;
+            try {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 100)}`);
+                }
+                const text = await response.text();
+                data = text ? JSON.parse(text) : null;
+            } catch (parseError) {
+                console.error('❌ JSON 파싱 오류:', parseError);
+                throw new Error('응답 파싱 실패');
+            }
+            
+            // 배열인지 확인
+            if (!Array.isArray(data)) {
+                console.error('❌ 예상과 다른 응답 형식:', typeof data);
+                setMonthlyRanking([]);
+                return;
+            }
+            
             const transformed = transformRankingData(data);
             setMonthlyRanking(transformed);
         } catch (error) {
@@ -241,7 +286,29 @@ const HomeScreen = () => {
                 console.error('❌ 지역별 랭킹 응답 오류:', response.status, errorText);
                 throw new Error(`지역별 랭킹 로드 실패: ${response.status} ${errorText}`);
             }
-            const data = await response.json();
+            
+            // 안전한 JSON 파싱
+            let data;
+            try {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 100)}`);
+                }
+                const text = await response.text();
+                data = text ? JSON.parse(text) : null;
+            } catch (parseError) {
+                console.error('❌ JSON 파싱 오류:', parseError);
+                throw new Error('응답 파싱 실패');
+            }
+            
+            // 배열인지 확인
+            if (!Array.isArray(data)) {
+                console.error('❌ 예상과 다른 응답 형식:', typeof data);
+                setLocalRanking([]);
+                return;
+            }
+            
             const transformed = transformRankingData(data);
             setLocalRanking(transformed);
         } catch (error) {
@@ -425,8 +492,31 @@ const HomeScreen = () => {
                             // 에러 발생 시에만 로그
                             console.error('프로필 조회 실패:', response.status);
                         } else {
-                            const data = await response.json();
-                            if (data.resultType === 'SUCCESS' && data.success) {
+                            // 안전한 JSON 파싱
+                            let data;
+                            try {
+                                const contentType = response.headers.get('content-type');
+                                if (!contentType || !contentType.includes('application/json')) {
+                                    const text = await response.text();
+                                    throw new Error(`Expected JSON but got ${contentType}`);
+                                }
+                                const text = await response.text();
+                                data = text ? JSON.parse(text) : null;
+                            } catch (parseError) {
+                                console.error('프로필 JSON 파싱 오류:', parseError);
+                                return;
+                            }
+                            
+                            if (data && data.resultType === 'SUCCESS' && data.success) {
+                                // 실제 프로필 데이터로 selectedProfile 업데이트
+                                setSelectedProfile({
+                                    id: data.success.userId,
+                                    title: data.success.username || data.success.name || item.title,
+                                    score: data.success.likesCount || 0,
+                                    icon: 'person',
+                                    image: data.success.avatar || item.image,
+                                    friendsCount: data.success.friendsCount || 0,
+                                });
                                 setIsHeartLiked(data.success.isLiked || false);
                             }
                         }
@@ -785,7 +875,9 @@ const HomeScreen = () => {
                                 </View>
                                 <View style={styles.statItem}>
                                     <Ionicons name="person" size={16} color="#4CAF50" />
-                                    <Text style={styles.statText}>89</Text>
+                                    <Text style={styles.statText}>
+                                        {selectedProfile?.friendsCount?.toLocaleString() || '0'}
+                                    </Text>
                                 </View>
                             </View>
                             

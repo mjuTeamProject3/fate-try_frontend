@@ -114,7 +114,21 @@ const NotificationScreen = () => {
             );
             
             if (friendRequestsResponse.ok) {
-                const responseData = await friendRequestsResponse.json();
+                // 안전한 JSON 파싱
+                let responseData;
+                try {
+                    const contentType = friendRequestsResponse.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        const text = await friendRequestsResponse.text();
+                        throw new Error(`Expected JSON but got ${contentType}`);
+                    }
+                    const text = await friendRequestsResponse.text();
+                    responseData = text ? JSON.parse(text) : null;
+                } catch (parseError) {
+                    console.error('[알림] JSON 파싱 오류:', parseError);
+                    setFriendRequests([]);
+                    return;
+                }
                 
                 // 응답 형식 확인 및 배열 추출
                 const friendRequestsData = responseData.resultType === 'SUCCESS' 
@@ -157,7 +171,21 @@ const NotificationScreen = () => {
             );
             
             if (otherNotificationsResponse.ok) {
-                const responseData = await otherNotificationsResponse.json();
+                // 안전한 JSON 파싱
+                let responseData;
+                try {
+                    const contentType = otherNotificationsResponse.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        const text = await otherNotificationsResponse.text();
+                        throw new Error(`Expected JSON but got ${contentType}`);
+                    }
+                    const text = await otherNotificationsResponse.text();
+                    responseData = text ? JSON.parse(text) : null;
+                } catch (parseError) {
+                    console.error('[알림] JSON 파싱 오류:', parseError);
+                    setOtherNotifications([]);
+                    return;
+                }
                 
                 // 응답 형식 확인 및 배열 추출
                 const otherNotificationsData = responseData.resultType === 'SUCCESS' 
