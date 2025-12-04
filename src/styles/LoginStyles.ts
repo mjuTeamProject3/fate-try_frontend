@@ -34,7 +34,11 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 20,
-        paddingBottom: 100,
+        paddingBottom: 40, // footer 제거로 줄임
+    },
+    socialButtonContainer: {
+        marginTop: 24,
+        marginBottom: 20,
     },
     section: {
         marginBottom: 24,
@@ -194,7 +198,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 16,
         position: 'relative',
-        marginBottom: 12,
     },
     socialButtonDisabled: {
         opacity: 0.5,

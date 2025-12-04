@@ -205,6 +205,8 @@ export default function SignupAdditionalScreen() {
             <ScrollView 
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled={true}
             >
                 {/* 닉네임 입력 */}
                 <View style={styles.section}>
@@ -316,7 +318,7 @@ export default function SignupAdditionalScreen() {
                 </View>
 
                 {/* 성별 선택 */}
-                <View style={styles.section}>
+                <View style={[styles.section, styles.genderSection]}>
                     <Text style={styles.label}>
                         성별 <Text style={styles.required}>*</Text>
                     </Text>

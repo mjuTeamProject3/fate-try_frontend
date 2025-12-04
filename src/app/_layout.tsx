@@ -539,6 +539,11 @@ function RootLayoutNav() {
         // 로그인 성공 이벤트 수신 시 로그인 상태 다시 확인
         console.log('[이벤트] 로그인 성공 이벤트 수신, 로그인 상태 재확인');
         checkLoginStatus();
+      } else if (event?.type === 'logout') {
+        // 로그아웃 이벤트 수신 시 즉시 로그인 상태를 false로 설정
+        console.log('[이벤트] 로그아웃 이벤트 수신, 로그인 상태를 false로 설정');
+        setIsLoggedIn(false);
+        router.replace('/login');
       }
     };
     // @ts-ignore - simple event bus on window for this app

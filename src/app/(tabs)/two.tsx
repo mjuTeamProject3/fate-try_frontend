@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 // 스타일 임포트
 import styles from '@/styles/Profile';
@@ -49,7 +49,8 @@ export default function ProfileScreen() {
             setIsLoadingProfile(true);
             const accessToken = await AsyncStorage.getItem('accessToken');
             if (!accessToken) {
-                console.error('Access Token이 없습니다.');
+                // 토큰이 없으면 조용히 return (로그아웃 상태)
+                setIsLoadingProfile(false);
                 return;
             }
 
@@ -82,7 +83,8 @@ export default function ProfileScreen() {
             setIsLoadingFriends(true);
             const accessToken = await AsyncStorage.getItem('accessToken');
             if (!accessToken) {
-                console.error('Access Token이 없습니다.');
+                // 토큰이 없으면 조용히 return (로그아웃 상태)
+                setIsLoadingFriends(false);
                 return;
             }
 
@@ -200,7 +202,19 @@ export default function ProfileScreen() {
                 <View style={styles.profileCard}>
                     <View style={styles.profileLeft}>
                         <View style={styles.profileImage}>
-                            <Ionicons name="person" size={40} color="white" />
+                            {profileData?.avatar ? (
+                                <Image
+                                    source={{ uri: profileData.avatar }}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        borderRadius: 50,
+                                    }}
+                                    resizeMode="cover"
+                                />
+                            ) : (
+                                <Ionicons name="person" size={40} color="white" />
+                            )}
                         </View>
                         <View style={styles.profileInfo}>
                             {isLoadingProfile ? (
@@ -515,79 +529,24 @@ export default function ProfileScreen() {
                             )}
                             
                             {/* 좋아요 및 친구 관련 버튼 */}
-                            <View style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                width: '100%',
-                                justifyContent: 'space-between',
-                            }}>
-                                <TouchableOpacity 
-                                    style={{
-                                        backgroundColor: '#f8f9fa',
-                                        borderRadius: 25,
-                                        paddingHorizontal: 20,
-                                        paddingVertical: 12,
-                                        flex: 1,
-                                        marginRight: 10,
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                    }}
-                                    onPress={async () => {
-                                        if (!selectedFriend?.id) {
-                                            Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
-                                            return;
-                                        }
-
-                                        const accessToken = await AsyncStorage.getItem('accessToken');
-                                        if (!accessToken) {
-                                            Alert.alert('로그인 필요', '좋아요를 누르려면 로그인이 필요합니다.');
-                                            return;
-                                        }
-
-                                        try {
-                                            if (isHeartLiked) {
-                                                // 좋아요 취소
-                                                const response = await fetch(USER_ENDPOINTS.unlike(selectedFriend.id), {
-                                                    method: 'DELETE',
-                                                    headers: {
-                                                        'Authorization': `Bearer ${accessToken}`,
-                                                    },
-                                                });
-                                                if (!response.ok) {
-                                                    throw new Error('좋아요 취소 실패');
-                                                }
-                                                setIsHeartLiked(false);
-                                            } else {
-                                                // 좋아요 추가
-                                                const response = await fetch(USER_ENDPOINTS.like(selectedFriend.id), {
-                                                    method: 'POST',
-                                                    headers: {
-                                                        'Authorization': `Bearer ${accessToken}`,
-                                                        'Content-Type': 'application/json',
-                                                    },
-                                                });
-                                                if (!response.ok) {
-                                                    throw new Error('좋아요 추가 실패');
-                                                }
-                                                setIsHeartLiked(true);
-                                            }
-                                            // 프로필 새로고침
-                                            await fetchFriendProfile(selectedFriend.id);
-                                        } catch (error) {
-                                            console.error('좋아요 처리 오류:', error);
-                                            Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
-                                        }
-                                    }}
-                                >
-                                    <Ionicons 
-                                        name={isHeartLiked ? "heart" : "heart-outline"} 
-                                        size={20} 
-                                        color={isHeartLiked ? "#E53935" : "#4CAF50"} 
-                                    />
-                                </TouchableOpacity>
-                                
-                                {/* 친구 추가된 상태 - 채팅과 친구 삭제 버튼 */}
-                                <>
+                            {/* 본인 프로필인 경우 버튼 숨김 */}
+                            {profileData?.userId && selectedFriendProfile?.userId && profileData.userId === selectedFriendProfile.userId ? (
+                                <View style={{
+                                    paddingVertical: 20,
+                                    alignItems: 'center',
+                                }}>
+                                    <Text style={{
+                                        fontSize: 14,
+                                        color: '#999',
+                                    }}>본인 프로필입니다</Text>
+                                </View>
+                            ) : (
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    width: '100%',
+                                    justifyContent: 'space-between',
+                                }}>
                                     <TouchableOpacity 
                                         style={{
                                             backgroundColor: '#f8f9fa',
@@ -599,31 +558,112 @@ export default function ProfileScreen() {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                         }}
-                                        onPress={startChatWithSelected}
-                                    >
-                                        <Ionicons name="chatbubble-outline" size={20} color="#4CAF50" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity 
-                                        style={{
-                                            backgroundColor: '#f8f9fa',
-                                            borderRadius: 25,
-                                            paddingHorizontal: 20,
-                                            paddingVertical: 12,
-                                            flex: 1,
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                        }}
                                         onPress={async () => {
-                                            if (!selectedFriend) return;
-                                            setShowProfileModal(false);
-                                            // 친구 목록 새로고침
-                                            await fetchFriendsList();
+                                            if (!selectedFriend?.id) {
+                                                Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                                return;
+                                            }
+
+                                            // 본인 체크
+                                            if (profileData?.userId && selectedFriendProfile?.userId && profileData.userId === selectedFriendProfile.userId) {
+                                                Alert.alert('알림', '본인에게는 좋아요를 할 수 없습니다.');
+                                                return;
+                                            }
+
+                                            const accessToken = await AsyncStorage.getItem('accessToken');
+                                            if (!accessToken) {
+                                                Alert.alert('로그인 필요', '좋아요를 누르려면 로그인이 필요합니다.');
+                                                return;
+                                            }
+
+                                            try {
+                                                if (isHeartLiked) {
+                                                    // 좋아요 취소
+                                                    const response = await fetch(USER_ENDPOINTS.unlike(selectedFriend.id), {
+                                                        method: 'DELETE',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${accessToken}`,
+                                                        },
+                                                    });
+                                                    if (!response.ok) {
+                                                        throw new Error('좋아요 취소 실패');
+                                                    }
+                                                    setIsHeartLiked(false);
+                                                } else {
+                                                    // 좋아요 추가
+                                                    const response = await fetch(USER_ENDPOINTS.like(selectedFriend.id), {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Authorization': `Bearer ${accessToken}`,
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                    });
+                                                    if (!response.ok) {
+                                                        throw new Error('좋아요 추가 실패');
+                                                    }
+                                                    setIsHeartLiked(true);
+                                                }
+                                                // 프로필 새로고침
+                                                await fetchFriendProfile(selectedFriend.id);
+                                            } catch (error) {
+                                                console.error('좋아요 처리 오류:', error);
+                                                Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+                                            }
                                         }}
                                     >
-                                        <Ionicons name="person-remove" size={20} color="#E53935" />
+                                        <Ionicons 
+                                            name={isHeartLiked ? "heart" : "heart-outline"} 
+                                            size={20} 
+                                            color={isHeartLiked ? "#E53935" : "#4CAF50"} 
+                                        />
                                     </TouchableOpacity>
-                                </>
-                            </View>
+                                    
+                                    {/* 친구 추가된 상태 - 채팅과 친구 삭제 버튼 */}
+                                    <>
+                                        <TouchableOpacity 
+                                            style={{
+                                                backgroundColor: '#f8f9fa',
+                                                borderRadius: 25,
+                                                paddingHorizontal: 20,
+                                                paddingVertical: 12,
+                                                flex: 1,
+                                                marginRight: 10,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                            }}
+                                            onPress={startChatWithSelected}
+                                        >
+                                            <Ionicons name="chatbubble-outline" size={20} color="#4CAF50" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity 
+                                            style={{
+                                                backgroundColor: '#f8f9fa',
+                                                borderRadius: 25,
+                                                paddingHorizontal: 20,
+                                                paddingVertical: 12,
+                                                flex: 1,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                            }}
+                                            onPress={async () => {
+                                                if (!selectedFriend) return;
+                                                
+                                                // 본인 체크
+                                                if (profileData?.userId && selectedFriendProfile?.userId && profileData.userId === selectedFriendProfile.userId) {
+                                                    Alert.alert('알림', '본인은 친구 목록에서 삭제할 수 없습니다.');
+                                                    return;
+                                                }
+                                                
+                                                setShowProfileModal(false);
+                                                // 친구 목록 새로고침
+                                                await fetchFriendsList();
+                                            }}
+                                        >
+                                            <Ionicons name="person-remove" size={20} color="#E53935" />
+                                        </TouchableOpacity>
+                                    </>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </View>

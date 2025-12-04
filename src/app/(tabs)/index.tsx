@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 이미지 모달 컴포넌트
 import ImageModal from '@/components/ImageModal';
 // API 엔드포인트 임포트
-import { RANKING_ENDPOINTS, getUserLikeEndpoint, USER_ENDPOINTS } from '@/constants/api';
+import { RANKING_ENDPOINTS, getUserLikeEndpoint, USER_ENDPOINTS, FORTUNE_ENDPOINTS } from '@/constants/api';
 
 // 랭킹 데이터 타입 정의
 interface RankingItem {
@@ -42,6 +42,17 @@ const HomeScreen = () => {
     // 랭킹 목록 모달 상태
     const [showRankingModal, setShowRankingModal] = useState(false);
     const [rankingModalType, setRankingModalType] = useState<'all' | 'monthly' | 'local'>('all');
+    // 사용자 프로필 데이터 (생년월일 표시용)
+    const [userProfile, setUserProfile] = useState<{ birthdate: string | null; gender: string | null } | null>(null);
+    // 오늘의 한마디 (랜덤 선택)
+    const [todayMessage, setTodayMessage] = useState<string>('');
+    // 사주 데이터 상태
+    const [sajuData, setSajuData] = useState<{
+        heavenlyStems: { year: string; month: string; day: string } | null;
+        earthlyBranches: { year: string; month: string; day: string } | null;
+        fiveElements: { year: string; month: string; day: string } | null;
+    } | null>(null);
+    const [isLoadingSaju, setIsLoadingSaju] = useState(false);
     
     // 랭킹 데이터 상태
     const [overallRanking, setOverallRanking] = useState<RankingItem[]>([]);
@@ -131,6 +142,8 @@ const HomeScreen = () => {
         loadNotificationCount();
         checkFirstSignup();
         loadAllRankings();
+        loadUserProfile(); // 사용자 프로필 로드
+        setTodayMessage(getTodayMessage()); // 오늘의 한마디 설정
     }, []);
 
     // 화면 포커스 시 알림 개수 다시 로드 및 랭킹 새로고침 (회원가입 체크는 제외)
@@ -138,8 +151,194 @@ const HomeScreen = () => {
         React.useCallback(() => {
             loadNotificationCount();
             loadAllRankings(); // 화면 포커스 시 랭킹 새로고침
+            loadUserProfile(); // 프로필 정보 새로고침
         }, [])
     );
+
+    // 사용자 프로필 로드 (생년월일 표시용)
+    const loadUserProfile = async () => {
+        try {
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) return;
+
+            const response = await fetch(USER_ENDPOINTS.getProfile, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.resultType === 'SUCCESS' && data.success) {
+                    setUserProfile({
+                        birthdate: data.success.birthdate || null,
+                        gender: data.success.gender || null,
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('프로필 로드 오류:', error);
+        }
+    };
+
+    // 생년월일 포맷팅 함수 (YYYY-MM-DD → YYYY년 M월 D일 • 요일)
+    const formatBirthdate = (birthdate: string | null): string => {
+        if (!birthdate) return '';
+        
+        try {
+            const date = new Date(birthdate);
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            
+            // 요일 계산
+            const daysOfWeek = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+            const dayOfWeek = daysOfWeek[date.getDay()];
+            
+            return `${year}년 ${month}월 ${day}일 • ${dayOfWeek}`;
+        } catch (error) {
+            console.error('생년월일 포맷팅 오류:', error);
+            return '';
+        }
+    };
+
+    // 오늘의 한마디 목록
+    const todayMessages = [
+        '새로운 인연이 찾아올 수 있는 좋은 날입니다. 적극적인 자세로 사람들과 소통해보세요! ✨',
+        '오늘은 당신의 매력이 빛나는 날입니다. 자신감을 가지고 도전해보세요! 💫',
+        '주변 사람들과의 관계가 더욱 돈독해질 수 있는 기회가 찾아옵니다. 🌟',
+        '작은 변화가 큰 기회로 이어질 수 있는 날입니다. 새로운 시도를 해보세요! 🍀',
+        '오늘은 당신의 긍정적인 에너지가 주변을 밝게 만들 것입니다. ☀️',
+        '인내와 노력이 결실을 맺을 수 있는 좋은 시기입니다. 포기하지 마세요! 🌱',
+        '새로운 아이디어나 영감이 떠오를 수 있는 날입니다. 창의적인 활동을 해보세요! 💡',
+        '주변 사람들의 도움을 받을 수 있는 날입니다. 혼자 고민하지 말고 상담해보세요! 🤝',
+        '오늘은 마음을 열고 솔직하게 소통하면 좋은 결과를 얻을 수 있습니다. 💚',
+        '작은 행동 하나하나가 미래의 큰 성과로 이어질 수 있는 날입니다. 꾸준히 노력하세요! 🌈'
+    ];
+
+    // 오늘의 한마디 랜덤 선택 (날짜 기반으로 매일 같은 메시지)
+    const getTodayMessage = (): string => {
+        const today = new Date();
+        const dateString = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+        // 날짜를 기반으로 시드 생성 (같은 날에는 같은 메시지)
+        let hash = 0;
+        for (let i = 0; i < dateString.length; i++) {
+            hash = ((hash << 5) - hash) + dateString.charCodeAt(i);
+            hash = hash & hash;
+        }
+        const index = Math.abs(hash) % todayMessages.length;
+        return todayMessages[index];
+    };
+
+    // 운세 별점 목록 (1~5개 별)
+    const fortuneStars = [
+        '★☆☆☆☆', // 1개
+        '★★☆☆☆', // 2개
+        '★★★☆☆', // 3개
+        '★★★★☆', // 4개
+        '★★★★★', // 5개
+    ];
+
+    // 날짜 기반 해시 생성 함수
+    const getDateHash = (seed: string): number => {
+        const today = new Date();
+        const dateString = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}-${seed}`;
+        let hash = 0;
+        for (let i = 0; i < dateString.length; i++) {
+            hash = ((hash << 5) - hash) + dateString.charCodeAt(i);
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
+    };
+
+    // 운세별 별점 랜덤 선택 (날짜 기반)
+    const getFortuneStar = (fortuneType: 'love' | 'money' | 'health' | 'career'): string => {
+        const hash = getDateHash(fortuneType);
+        const index = hash % fortuneStars.length;
+        return fortuneStars[index];
+    };
+
+    // 사주 계산 함수
+    const loadSajuData = async () => {
+        if (!userProfile?.birthdate || !userProfile?.gender) {
+            console.warn('[사주] 생년월일 또는 성별 정보가 없습니다.');
+            return;
+        }
+
+        try {
+            setIsLoadingSaju(true);
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                console.warn('[사주] 인증 토큰이 없습니다.');
+                return;
+            }
+
+            // 생년월일을 year, month, day로 변환
+            const birthdate = new Date(userProfile.birthdate);
+            const year = birthdate.getFullYear();
+            const month = birthdate.getMonth() + 1; // 0-based to 1-based
+            const day = birthdate.getDate();
+
+            // 성별 정규화 (male/female)
+            const normalizedGender = userProfile.gender.toLowerCase();
+            const gender = normalizedGender === 'male' || normalizedGender === 'm' || normalizedGender === '남' || normalizedGender === '남성' 
+                ? 'male' 
+                : 'female';
+
+            const response = await fetch(FORTUNE_ENDPOINTS.calculate, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    year,
+                    month,
+                    day,
+                    isLunar: false, // 기본값: 양력
+                    gender,
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.resultType === 'SUCCESS' && data.success) {
+                    setSajuData({
+                        heavenlyStems: data.success.heavenlyStems || null,
+                        earthlyBranches: data.success.earthlyBranches || null,
+                        fiveElements: data.success.fiveElements || null,
+                    });
+                } else {
+                    console.error('[사주] API 응답 오류:', data);
+                }
+            } else {
+                const errorText = await response.text();
+                console.error('[사주] API 호출 실패:', response.status, errorText);
+            }
+        } catch (error) {
+            console.error('[사주] 사주 계산 오류:', error);
+        } finally {
+            setIsLoadingSaju(false);
+        }
+    };
+
+    // 사주 팔자 포맷팅 함수 (천간 + 지지 + 오행)
+    const formatPillar = (type: 'year' | 'month' | 'day'): string => {
+        if (!sajuData) return '';
+        
+        const heavenlyStem = sajuData.heavenlyStems?.[type] || '';
+        const earthlyBranch = sajuData.earthlyBranches?.[type] || '';
+        const fiveElement = sajuData.fiveElements?.[type] || '';
+        
+        // 천간과 지지를 조합 (예: "을목 해수")
+        if (heavenlyStem && earthlyBranch && fiveElement) {
+            return `${heavenlyStem}${earthlyBranch} (${fiveElement})`;
+        }
+        
+        return '';
+    };
 
     // AsyncStorage에서 알림 개수 로드
     const loadNotificationCount = async () => {
@@ -583,13 +782,25 @@ const HomeScreen = () => {
                 {/* 1. 내 사주 정보 섹션 */}
                 <TouchableOpacity 
                     style={styles.sajuInfoCard}
-                    onPress={() => setIsSajuExpanded(!isSajuExpanded)}
+                    onPress={async () => {
+                        const newExpanded = !isSajuExpanded;
+                        setIsSajuExpanded(newExpanded);
+                        // 확장할 때만 사주 데이터 로드
+                        if (newExpanded && !sajuData && !isLoadingSaju) {
+                            await loadSajuData();
+                        }
+                    }}
                 >
                     <View style={styles.sajuInfoTop}>
                         <AntDesign name="star" size={24} color="#4CAF50" />
                         <View style={styles.sajuTextContainer}>
                             <Text style={styles.sajuInfoTitle}>내 사주 정보</Text>
-                            <Text style={styles.sajuInfoDetail}>2003년 3월 18일 • 화요일</Text>
+                            <Text style={styles.sajuInfoDetail}>
+                                {userProfile?.birthdate 
+                                    ? formatBirthdate(userProfile.birthdate)
+                                    : '생년월일을 입력해주세요'
+                                }
+                            </Text>
                         </View>
                     </View>
                     <AntDesign 
@@ -605,20 +816,32 @@ const HomeScreen = () => {
                         {/* 사주 팔자 */}
                         <View style={styles.sajuSection}>
                             <Text style={styles.sajuSectionTitle}>사주 팔자</Text>
-                            <View style={styles.sajuPillars}>
-                                <View style={styles.pillarItem}>
-                                    <Text style={styles.pillarLabel}>연주</Text>
-                                    <Text style={styles.pillarValue}>올해 (을목 해수)</Text>
+                            {isLoadingSaju ? (
+                                <View style={{ padding: 20, alignItems: 'center' }}>
+                                    <ActivityIndicator size="small" color="#4CAF50" />
                                 </View>
-                                <View style={styles.pillarItem}>
-                                    <Text style={styles.pillarLabel}>월주</Text>
-                                    <Text style={styles.pillarValue}>기묘 (기토 묘목)</Text>
+                            ) : (
+                                <View style={styles.sajuPillars}>
+                                    <View style={styles.pillarItem}>
+                                        <Text style={styles.pillarLabel}>연주</Text>
+                                        <Text style={styles.pillarValue}>
+                                            {formatPillar('year') || '데이터 없음'}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.pillarItem}>
+                                        <Text style={styles.pillarLabel}>월주</Text>
+                                        <Text style={styles.pillarValue}>
+                                            {formatPillar('month') || '데이터 없음'}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.pillarItem}>
+                                        <Text style={styles.pillarLabel}>일주</Text>
+                                        <Text style={styles.pillarValue}>
+                                            {formatPillar('day') || '데이터 없음'}
+                                        </Text>
+                                    </View>
                                 </View>
-                                <View style={styles.pillarItem}>
-                                    <Text style={styles.pillarLabel}>일주</Text>
-                                    <Text style={styles.pillarValue}>정사 (정화 사화)</Text>
-                                </View>
-                            </View>
+                            )}
                         </View>
 
                         {/* 운세 */}
@@ -627,19 +850,19 @@ const HomeScreen = () => {
                             <View style={styles.fortuneItems}>
                                 <View style={styles.fortuneItem}>
                                     <Text style={styles.fortuneLabel}>연애운</Text>
-                                    <Text style={styles.fortuneStars}>★★★★☆</Text>
+                                    <Text style={styles.fortuneStars}>{getFortuneStar('love')}</Text>
                                 </View>
                                 <View style={styles.fortuneItem}>
                                     <Text style={styles.fortuneLabel}>금전운</Text>
-                                    <Text style={styles.fortuneStars}>★★★☆☆</Text>
+                                    <Text style={styles.fortuneStars}>{getFortuneStar('money')}</Text>
                                 </View>
                                 <View style={styles.fortuneItem}>
                                     <Text style={styles.fortuneLabel}>건강운</Text>
-                                    <Text style={styles.fortuneStars}>★★★★★</Text>
+                                    <Text style={styles.fortuneStars}>{getFortuneStar('health')}</Text>
                                 </View>
                                 <View style={styles.fortuneItem}>
                                     <Text style={styles.fortuneLabel}>직업운</Text>
-                                    <Text style={styles.fortuneStars}>★★★☆☆</Text>
+                                    <Text style={styles.fortuneStars}>{getFortuneStar('career')}</Text>
                                 </View>
                             </View>
                         </View>
@@ -647,7 +870,7 @@ const HomeScreen = () => {
                         {/* 오늘의 한마디 */}
                         <View style={styles.todayMessage}>
                             <Text style={styles.todayMessageText}>
-                                새로운 인연이 찾아올 수 있는 좋은 날입니다. 적극적인 자세로 사람들과 소통해보세요! ✨
+                                {todayMessage || getTodayMessage()}
                             </Text>
                         </View>
                     </View>

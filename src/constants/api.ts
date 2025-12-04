@@ -37,6 +37,7 @@ export const AUTH_ENDPOINTS = {
     google: `${API_BASE_URL}/auth/google`,
     kakao: `${API_BASE_URL}/auth/kakao`,
     naver: `${API_BASE_URL}/auth/naver`,
+    signout: `${API_BASE_URL}/auth/signout`, // 로그아웃
 };
 
 // 콜백 URL (앱 스킴 사용)
@@ -76,6 +77,13 @@ export const FRIEND_ENDPOINTS = {
     decline: (userId: number) => `${API_BASE_URL}/friend/decline/${userId}`,
 };
 
+// 채팅 엔드포인트
+export const CHAT_ENDPOINTS = {
+    getFriendChats: `${API_BASE_URL}/chat/friends`, // 친구 채팅방 목록 조회
+    getMessages: (partnerId: number) => `${API_BASE_URL}/message/${partnerId}`, // 친구와의 메시지 조회
+    sendMessage: `${API_BASE_URL}/message`, // 메시지 전송
+};
+
 // 알림 엔드포인트
 export const NOTIFICATION_ENDPOINTS = {
     getNotifications: (params?: { type?: string; processed?: boolean; isRead?: boolean; take?: number }) => {
@@ -101,6 +109,12 @@ export const NOTIFICATION_ENDPOINTS = {
 // 이미지 업로드 엔드포인트
 export const UPLOAD_ENDPOINTS = {
     image: `${API_BASE_URL}/upload/image`,
+};
+
+// 사주/운세 엔드포인트
+export const FORTUNE_ENDPOINTS = {
+    calculate: `${API_BASE_URL}/fortune/calculate`, // 사주 계산
+    compatibility: `${API_BASE_URL}/fortune/compatibility`, // 궁합 분석
 };
 
 // 안전한 JSON 파싱 헬퍼 함수

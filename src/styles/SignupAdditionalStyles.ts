@@ -34,10 +34,13 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         padding: 20,
-        paddingBottom: 100,
+        paddingBottom: 400, // footer 높이 + 충분한 여유 공간 확보
     },
     section: {
         marginBottom: 24,
+    },
+    genderSection: {
+        marginBottom: 100, // 성별 섹션에 추가 여백
     },
     label: {
         fontSize: 14,

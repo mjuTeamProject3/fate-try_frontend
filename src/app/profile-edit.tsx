@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ImageModal from '@/components/ImageModal';
-import { USER_ENDPOINTS } from '@/constants/api';
+import { USER_ENDPOINTS, UPLOAD_ENDPOINTS, API_BASE_URL } from '@/constants/api';
 
 // 한국 지역 목록
 const REGIONS = [
@@ -46,6 +46,7 @@ export default function ProfileEditScreen() {
     // 프로필 사진
     const [imageUri, setImageUri] = useState<string | null>(null);
     const [showImageModal, setShowImageModal] = useState(false);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     // 생년월일로부터 나이 계산
     const calculateAge = (birthdate: string | null): string => {
@@ -120,7 +121,11 @@ export default function ProfileEditScreen() {
                 
                 // 프로필 사진
                 if (user.avatar) {
-                    setImageUri(user.avatar);
+                    // avatar가 상대 경로면 절대 경로로 변환
+                    const avatarUrl = user.avatar.startsWith('http') 
+                        ? user.avatar 
+                        : `${API_BASE_URL.replace('/v1/api', '')}${user.avatar}`;
+                    setImageUri(avatarUrl);
                 }
             }
         } catch (error) {
@@ -154,10 +159,59 @@ export default function ProfileEditScreen() {
             aspect: [1, 1],
             quality: 0.9,
         });
-        if (!result.canceled) {
-            setImageUri(result.assets[0]?.uri ?? null);
+        if (!result.canceled && result.assets[0]?.uri) {
+            // 선택한 이미지를 바로 표시
+            setImageUri(result.assets[0].uri);
         }
     }, [requestMediaPermission]);
+
+    // 이미지 업로드 함수
+    const uploadImage = async (imageUri: string): Promise<string | null> => {
+        try {
+            const accessToken = await AsyncStorage.getItem('accessToken');
+            if (!accessToken) {
+                Alert.alert('오류', '로그인이 필요합니다.');
+                return null;
+            }
+
+            // FormData 생성
+            const formData = new FormData();
+            const filename = imageUri.split('/').pop() || 'image.jpg';
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : 'image/jpeg';
+            
+            formData.append('file', {
+                uri: imageUri,
+                name: filename,
+                type: type,
+            } as any);
+
+            // 서버에 업로드
+            const response = await fetch(UPLOAD_ENDPOINTS.image, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error('이미지 업로드 실패');
+            }
+
+            const data = await response.json();
+            // 백엔드에서 반환하는 url이 상대 경로이므로 절대 경로로 변환
+            const imageUrl = data.url && data.url.startsWith('http') 
+                ? data.url 
+                : `${API_BASE_URL.replace('/v1/api', '')}${data.url}`;
+            
+            return imageUrl;
+        } catch (error) {
+            console.error('이미지 업로드 오류:', error);
+            Alert.alert('오류', '이미지 업로드 중 문제가 발생했습니다.');
+            return null;
+        }
+    };
 
     // 프로필 저장
     const save = async () => {
@@ -195,6 +249,24 @@ export default function ProfileEditScreen() {
                 return;
             }
 
+            // 이미지가 새로 선택되었고 로컬 URI인 경우 서버에 업로드
+            let avatarUrl: string | null = null;
+            if (imageUri) {
+                // 로컬 URI인지 확인 (file:// 또는 content://로 시작)
+                if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
+                    setIsUploadingImage(true);
+                    avatarUrl = await uploadImage(imageUri);
+                    setIsUploadingImage(false);
+                    if (!avatarUrl) {
+                        Alert.alert('오류', '이미지 업로드에 실패했습니다.');
+                        return;
+                    }
+                } else {
+                    // 이미 서버 URL인 경우 그대로 사용
+                    avatarUrl = imageUri;
+                }
+            }
+
             // 성별 변환 (프론트엔드: 'male'/'female' → 백엔드: '남성'/'여성')
             const genderValue = gender === 'male' ? '남성' : '여성';
 
@@ -209,6 +281,7 @@ export default function ProfileEditScreen() {
                     birthdate: birthDate,
                     location: location,
                     gender: genderValue,
+                    avatar: avatarUrl, // avatar 필드 추가
                 }),
             });
 
@@ -397,16 +470,16 @@ export default function ProfileEditScreen() {
                 {/* 저장 */}
                 <TouchableOpacity 
                     onPress={save} 
-                    disabled={isSaving}
+                    disabled={isSaving || isUploadingImage}
                     style={{ 
-                        backgroundColor: isSaving ? '#ccc' : '#4CAF50', 
+                        backgroundColor: (isSaving || isUploadingImage) ? '#ccc' : '#4CAF50', 
                         padding: 14, 
                         borderRadius: 12, 
                         alignItems: 'center',
-                        opacity: isSaving ? 0.6 : 1,
+                        opacity: (isSaving || isUploadingImage) ? 0.6 : 1,
                     }}
                 >
-                    {isSaving ? (
+                    {(isSaving || isUploadingImage) ? (
                         <ActivityIndicator size="small" color="#fff" />
                     ) : (
                         <Text style={{ color: '#fff', fontWeight: '700' }}>프로필 저장</Text>

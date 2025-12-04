@@ -51,6 +51,7 @@ const RandomVideoRoomScreen = () => {
     const [isJoined, setIsJoined] = useState(false);
     const [remoteUid, setRemoteUid] = useState<number | null>(null);
     const [localUid, setLocalUid] = useState<number | null>(null);
+    const [remoteVideoState, setRemoteVideoState] = useState<number>(2); // 2 = VideoSourceStateRunning (기본값: 실행 중)
     const socketRef = useRef<Socket | null>(null);
 
     // 상대방 프로필 데이터
@@ -61,6 +62,46 @@ const RandomVideoRoomScreen = () => {
         icon: 'person'
     });
     const [partnerAvatar, setPartnerAvatar] = useState<string | null>(null);
+    const [myAvatar, setMyAvatar] = useState<string | null>(null);
+
+    // 현재 사용자 프로필 정보 가져오기
+    useEffect(() => {
+        let mounted = true;
+
+        const fetchMyProfile = async () => {
+            try {
+                const token = await AsyncStorage.getItem('accessToken');
+                if (!token) return;
+
+                const response = await fetch(USER_ENDPOINTS.getProfile, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && mounted && data.success.avatar) {
+                        // avatar가 상대 경로면 절대 경로로 변환
+                        const avatarUrl = data.success.avatar.startsWith('http') 
+                            ? data.success.avatar 
+                            : `${API_BASE_URL.replace('/v1/api', '')}${data.success.avatar}`;
+                        setMyAvatar(avatarUrl);
+                    }
+                }
+            } catch (error) {
+                console.error('[영상통화] 내 프로필 가져오기 오류:', error);
+            }
+        };
+
+        fetchMyProfile();
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
 
     // 상대방 프로필 정보 가져오기
     useEffect(() => {
@@ -283,8 +324,29 @@ const RandomVideoRoomScreen = () => {
                             console.log('[영상통화] 상태 업데이트: isJoined=true, localUid=', connection.localUid);
                             setIsJoined(true);
                             setLocalUid(connection.localUid);
-                            // 채널 입장 후 로컬 비디오 미리보기 시작
+                            // 채널 입장 후 로컬 미디어 활성화
                             if (engine) {
+                                // 로컬 오디오 활성화 (마이크)
+                                console.log('[영상통화] enableLocalAudio() 호출');
+                                const enableLocalAudioResult = engine.enableLocalAudio(true);
+                                console.log('[영상통화] enableLocalAudio() 결과:', enableLocalAudioResult);
+                                
+                                // 마이크 명시적으로 켜기 (기본값: 켜짐)
+                                console.log('[영상통화] muteLocalAudioStream(false) 호출 - 마이크 켜기');
+                                const unmuteAudioResult = engine.muteLocalAudioStream(false);
+                                console.log('[영상통화] muteLocalAudioStream(false) 결과:', unmuteAudioResult);
+                                
+                                // 로컬 비디오 활성화
+                                console.log('[영상통화] enableLocalVideo() 호출');
+                                const enableLocalVideoResult = engine.enableLocalVideo(true);
+                                console.log('[영상통화] enableLocalVideo() 결과:', enableLocalVideoResult);
+                                
+                                // 카메라 명시적으로 켜기 (기본값: 켜짐)
+                                console.log('[영상통화] muteLocalVideoStream(false) 호출 - 카메라 켜기');
+                                const unmuteVideoResult = engine.muteLocalVideoStream(false);
+                                console.log('[영상통화] muteLocalVideoStream(false) 결과:', unmuteVideoResult);
+                                
+                                // 채널 입장 후 로컬 비디오 미리보기 시작
                                 console.log('[영상통화] startPreview() 호출');
                                 const previewResult = engine.startPreview();
                                 console.log('[영상통화] startPreview() 결과:', previewResult);
@@ -313,6 +375,29 @@ const RandomVideoRoomScreen = () => {
                                 uid: remoteUid
                             });
                             console.log('[영상통화] setupRemoteVideo() 결과:', setupResult);
+                            
+                            // 원격 오디오 스트림 활성화 (상대방 소리를 들을 수 있도록)
+                            console.log('[영상통화] muteRemoteAudioStream(false) 호출 - 원격 오디오 켜기:', remoteUid);
+                            const unmuteRemoteAudioResult = engine.muteRemoteAudioStream(remoteUid, false);
+                            console.log('[영상통화] muteRemoteAudioStream(false) 결과:', unmuteRemoteAudioResult);
+                            
+                            // 모든 원격 오디오 스트림 활성화 (추가 안전장치)
+                            console.log('[영상통화] muteAllRemoteAudioStreams(false) 호출 - 모든 원격 오디오 켜기');
+                            const unmuteAllAudioResult = engine.muteAllRemoteAudioStreams(false);
+                            console.log('[영상통화] muteAllRemoteAudioStreams(false) 결과:', unmuteAllAudioResult);
+                        }
+                    },
+                    
+                    // 원격 사용자의 비디오 상태 변경 (상대방이 카메라를 끄면 감지)
+                    onUserVideoStateChanged: (connection: RtcConnection, remoteUid: number, state: number, reason: number, elapsed: number) => {
+                        console.log('[영상통화] 상대방 비디오 상태 변경:', { remoteUid, state, reason, elapsed });
+                        // state: 0 = VideoSourceStateStopped (비디오 중지)
+                        // state: 1 = VideoSourceStateStarting (비디오 시작 중)
+                        // state: 2 = VideoSourceStateRunning (비디오 실행 중)
+                        // state: 3 = VideoSourceStateFailed (비디오 실패)
+                        if (mounted) {
+                            // 비디오 상태 저장 (상대방 화면에서 프로필 이미지 표시를 위해)
+                            setRemoteVideoState(state);
                         }
                     },
                     
@@ -361,11 +446,16 @@ const RandomVideoRoomScreen = () => {
                 const enableVideoResult = engine.enableVideo();
                 console.log('[영상통화] enableVideo() 결과:', enableVideoResult);
                 
+                // 6. 오디오 활성화 (마이크 사용을 위해 필수)
+                console.log('[영상통화] enableAudio() 호출');
+                const enableAudioResult = engine.enableAudio();
+                console.log('[영상통화] enableAudio() 결과:', enableAudioResult);
+                
                 if (mounted) {
                     setRtcEngine(engine);
                 }
                 
-                // 6. 채널 입장 (roomId를 채널명으로 사용)
+                // 7. 채널 입장 (roomId를 채널명으로 사용)
                 console.log('[영상통화] joinChannel() 호출:', roomId);
                 const joinResult = engine.joinChannel(
                     '', // Token (개발 환경에서는 빈 문자열 가능)
@@ -436,24 +526,53 @@ const RandomVideoRoomScreen = () => {
     };
 
     const toggleCamera = () => {
-        if (rtcEngine) {
+        if (rtcEngine && isJoined) {
             try {
-                rtcEngine.muteLocalVideoStream(!isCameraOn);
-                setIsCameraOn(!isCameraOn);
+                const newState = !isCameraOn;
+                // enableLocalVideo: true = 비디오 켜기, false = 비디오 끄기 (상대방에게도 전송 중단)
+                // isCameraOn = true (초록색) → 카메라 켜짐 → enableLocalVideo(true)
+                // isCameraOn = false (회색 엑스) → 카메라 꺼짐 → enableLocalVideo(false)
+                if (newState) {
+                    // 카메라 켜기
+                    const enableResult = rtcEngine.enableLocalVideo(true);
+                    const unmuteResult = rtcEngine.muteLocalVideoStream(false);
+                    console.log('[영상통화] 카메라 켜기:', { enableResult, unmuteResult });
+                } else {
+                    // 카메라 끄기 (상대방에게도 전송 중단)
+                    const muteResult = rtcEngine.muteLocalVideoStream(true);
+                    const disableResult = rtcEngine.enableLocalVideo(false);
+                    console.log('[영상통화] 카메라 끄기:', { muteResult, disableResult });
+                }
+                setIsCameraOn(newState);
             } catch (error) {
                 console.error('[영상통화] 카메라 토글 오류:', error);
             }
+        } else {
+            console.warn('[영상통화] 카메라 토글 실패: rtcEngine 또는 isJoined 없음');
         }
     };
 
     const toggleMicrophone = () => {
-        if (rtcEngine) {
+        if (rtcEngine && isJoined) {
             try {
-                rtcEngine.muteLocalAudioStream(!isMicrophoneOn);
-                setIsMicrophoneOn(!isMicrophoneOn);
+                const newState = !isMicrophoneOn;
+                // muteLocalAudioStream: true = 오디오 끄기, false = 오디오 켜기
+                // isMicrophoneOn = true (초록색) → 마이크 켜짐 → muteLocalAudioStream(false)
+                // isMicrophoneOn = false (회색 엑스) → 마이크 꺼짐 → muteLocalAudioStream(true)
+                const result = rtcEngine.muteLocalAudioStream(newState);
+                console.log('[영상통화] 마이크 토글:', { 
+                    isMicrophoneOn, 
+                    newState, 
+                    muteParam: newState, 
+                    result,
+                    expected: newState ? '마이크 끄기' : '마이크 켜기'
+                });
+                setIsMicrophoneOn(newState);
             } catch (error) {
                 console.error('[영상통화] 마이크 토글 오류:', error);
             }
+        } else {
+            console.warn('[영상통화] 마이크 토글 실패: rtcEngine 또는 isJoined 없음');
         }
     };
 
@@ -527,18 +646,30 @@ const RandomVideoRoomScreen = () => {
         <View style={styles.container}>
             {/* 상대방 비디오 영역 (배경) */}
             <View style={styles.partnerVideoContainer}>
-                {remoteUid !== null && rtcEngine && isJoined ? (
+                {remoteUid !== null && rtcEngine && isJoined && remoteVideoState === 2 ? (
+                    // 상대방 비디오가 실행 중일 때만 비디오 표시
                     <RtcSurfaceView
                         canvas={{ uid: remoteUid, sourceType: 9 }} // sourceType 9 = VideoSourceRemote
                         style={styles.partnerVideo}
                         zOrderMediaOverlay={false}
                     />
                 ) : (
+                    // 상대방 비디오가 중지되었거나 입장 전일 때 프로필 이미지 표시
                     <View style={styles.partnerVideoPlaceholder}>
-                        <View style={styles.partnerAvatar}>
-                            <Ionicons name="person" size={80} color="#fff" />
-                        </View>
-                        <Text style={styles.partnerName}>{partnerUsername}</Text>
+                        {partnerAvatar ? (
+                            <Image 
+                                source={{ uri: partnerAvatar }}
+                                style={styles.partnerVideo}
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <>
+                                <View style={styles.partnerAvatar}>
+                                    <Ionicons name="person" size={80} color="#fff" />
+                                </View>
+                                <Text style={styles.partnerName}>{partnerUsername}</Text>
+                            </>
+                        )}
                     </View>
                 )}
             </View>
@@ -576,12 +707,28 @@ const RandomVideoRoomScreen = () => {
             {/* 내 비디오 (우측 하단) */}
             {rtcEngine && isJoined ? (
                 <View style={styles.myVideoContainer}>
-                    <RtcSurfaceView
-                        canvas={{ sourceType: 0 }} // sourceType 0 = VideoSourceCameraPrimary, uid 생략 = 로컬 비디오
-                        style={styles.myVideo}
-                        zOrderMediaOverlay={true}
-                        mirror={true} // 전면 카메라 미러링
-                    />
+                    {isCameraOn ? (
+                        <RtcSurfaceView
+                            canvas={{ sourceType: 0 }} // sourceType 0 = VideoSourceCameraPrimary, uid 생략 = 로컬 비디오
+                            style={styles.myVideo}
+                            zOrderMediaOverlay={true}
+                            mirror={true} // 전면 카메라 미러링
+                        />
+                    ) : (
+                        <View style={styles.myVideo}>
+                            {myAvatar ? (
+                                <Image 
+                                    source={{ uri: myAvatar }}
+                                    style={styles.myVideo}
+                                    resizeMode="cover"
+                                />
+                            ) : (
+                                <View style={[styles.myVideo, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#4CAF50' }]}>
+                                    <Ionicons name="person" size={40} color="#fff" />
+                                </View>
+                            )}
+                        </View>
+                    )}
                 </View>
             ) : (
                 <View style={styles.myVideoContainer}>
@@ -806,15 +953,15 @@ const RandomVideoRoomScreen = () => {
                     />
                 </TouchableOpacity>
 
-                {/* 프로필 버튼 (비디오 버튼 대신) */}
+                {/* 영상(카메라) 토글 버튼 */}
                 <TouchableOpacity 
-                    style={styles.controlButton}
-                    onPress={handleProfileClick}
+                    style={[styles.controlButton, !isCameraOn && styles.controlButtonOff]}
+                    onPress={toggleCamera}
                 >
                     <Ionicons 
-                        name="person" 
+                        name={isCameraOn ? "videocam" : "videocam-off"} 
                         size={24} 
-                        color="#4CAF50" 
+                        color={isCameraOn ? "#4CAF50" : "#999"} 
                     />
                 </TouchableOpacity>
 

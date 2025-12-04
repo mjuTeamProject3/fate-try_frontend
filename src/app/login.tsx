@@ -428,6 +428,7 @@ export default function LoginScreen() {
                     <ScrollView 
                         contentContainerStyle={styles.scrollContent}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
                     >
                         {/* 추가 정보 입력 필드들 - showAdditionalInfo가 true일 때만 표시 */}
                         {showAdditionalInfo && (
@@ -548,41 +549,33 @@ export default function LoginScreen() {
                                         ))}
                                     </View>
                                 </View>
+
+                                {/* 구글 로그인 버튼 - 성별 선택 아래에 배치 */}
+                                <View style={styles.socialButtonContainer}>
+                                    {renderSocialButton(
+                                        'google',
+                                        'Google로 로그인',
+                                        'https://www.google.com/favicon.ico',
+                                        styles.googleButton,
+                                        styles.googleButtonText
+                                    )}
+                                </View>
                             </>
                         )}
+
+                        {/* 기존 사용자일 때도 구글 로그인 버튼 표시 */}
+                        {!showAdditionalInfo && (
+                            <View style={styles.socialButtonContainer}>
+                                {renderSocialButton(
+                                    'google',
+                                    'Google로 로그인',
+                                    'https://www.google.com/favicon.ico',
+                                    styles.googleButton,
+                                    styles.googleButtonText
+                                )}
+                            </View>
+                        )}
                     </ScrollView>
-
-                    {/* 소셜 로그인 버튼들 */}
-                    <View style={styles.footer}>
-                <View style={styles.buttonContainer}>
-                    {/* 구글 로그인 */}
-                    {renderSocialButton(
-                        'google',
-                        'Google로 로그인',
-                        'https://www.google.com/favicon.ico',
-                        styles.googleButton,
-                        styles.googleButtonText
-                    )}
-
-                    {/* 카카오 로그인 */}
-                    {renderSocialButton(
-                        'kakao',
-                        '카카오로 로그인',
-                        'https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png',
-                        styles.kakaoButton,
-                        styles.kakaoButtonText
-                    )}
-
-                    {/* 네이버 로그인 */}
-                    {renderSocialButton(
-                        'naver',
-                        '네이버로 로그인',
-                        'https://search.pstatic.net/common/?src=http%3A%2F%2Fblogfiles.naver.net%2FMjAyMTA5MTVfMTkw%2FMDAxNjMxNjk2MzM4NjYy.afH1qY-8zg4NeCiRF7xkXpXwRRRQ3rhpyphINwDIOSwg.H-lX7EaH3gynXGNyccJk6bTkAd_JsDDMziPbEVtJzcgg.PNG.nd1126%2F20210915_175842.png&type=sc960_832',
-                        styles.naverButton,
-                        styles.naverButtonText
-                    )}
-                </View>
-            </View>
 
                     {/* 로딩 오버레이 */}
                     {loading && (
@@ -590,8 +583,6 @@ export default function LoginScreen() {
                             <ActivityIndicator size="large" color="#4CAF50" />
                             <Text style={styles.loadingText}>
                                 {loading === 'google' && 'Google 로그인 중...'}
-                                {loading === 'kakao' && '카카오 로그인 중...'}
-                                {loading === 'naver' && '네이버 로그인 중...'}
                             </Text>
                         </View>
                     )}
