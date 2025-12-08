@@ -72,6 +72,7 @@ const styles = StyleSheet.create({
     },
     messagesContent: {
         padding: 15,
+        paddingBottom: 20, // 입력 영역과의 여백
     },
     messageWrapper: {
         flexDirection: 'row',

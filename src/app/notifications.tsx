@@ -268,6 +268,23 @@ const NotificationScreen = () => {
                 prev.filter(notif => notif.id !== notificationId)
             );
 
+            // AsyncStorage의 friend_requests에서도 제거
+            try {
+                const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                if (pendingRequests) {
+                    const requests = JSON.parse(pendingRequests);
+                    const updatedRequests = requests.filter((req: any) => 
+                        req.userId !== userId
+                    );
+                    await AsyncStorage.setItem('friend_requests', JSON.stringify(updatedRequests));
+                }
+            } catch (error) {
+                console.error('AsyncStorage 업데이트 오류:', error);
+            }
+
+            // 알림 목록 새로고침 (친구 목록과 채팅방 목록도 자동으로 갱신됨)
+            await fetchNotifications();
+
             if (action === 'accept') {
                 Alert.alert('성공', '친구 요청을 수락했습니다.');
             }

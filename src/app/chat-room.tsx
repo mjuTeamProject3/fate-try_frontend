@@ -9,7 +9,7 @@ import { Socket } from 'socket.io-client';
 import styles from '@/styles/ChatRoomStyles';
 import ImageModal from '@/components/ImageModal';
 import { getSocket, disconnectSocket } from '@/utils/socket';
-import { USER_ENDPOINTS, UPLOAD_ENDPOINTS, CHAT_ENDPOINTS, API_BASE_URL } from '@/constants/api';
+import { USER_ENDPOINTS, UPLOAD_ENDPOINTS, CHAT_ENDPOINTS, FRIEND_ENDPOINTS, NOTIFICATION_ENDPOINTS, API_BASE_URL } from '@/constants/api';
 
 // 채팅 메시지 인터페이스
 interface Message {
@@ -100,7 +100,8 @@ export default function ChatRoomScreen() {
     // 프로필 모달 상태
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [isHeartLiked, setIsHeartLiked] = useState(false);
-    const [isFriendAdded, setIsFriendAdded] = useState(true); // 채팅방에서는 이미 친구이므로 true
+    const [isFriendAdded, setIsFriendAdded] = useState(isFriendChat); // 친구 채팅이면 true, 랜덤 채팅이면 false
+    const [isFriendRequestSent, setIsFriendRequestSent] = useState(false);
     const [showImageExpandModal, setShowImageExpandModal] = useState(false);
     const [selectedMessageImage, setSelectedMessageImage] = useState<string | null>(null);
     const [isMessageImageModalVisible, setMessageImageModalVisible] = useState(false);
@@ -221,6 +222,121 @@ export default function ChatRoomScreen() {
                 setPartnerProfile(data.success);
                 // 좋아요 상태 설정
                 setIsHeartLiked(data.success.isLiked || false);
+                
+                // 친구 상태 확인 (랜덤 채팅인 경우에만)
+                if (!isFriendChat) {
+                    try {
+                        const friendsResponse = await fetch(FRIEND_ENDPOINTS.getFriends, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'application/json',
+                            },
+                        });
+                        if (friendsResponse.ok) {
+                            const friendsData = await friendsResponse.json();
+                            const friendList = (friendsData.success?.friends || friendsData.success || []);
+                            const isFriend = Array.isArray(friendList) && friendList.some((friend: any) => 
+                                friend.userId === partnerId || friend.id === partnerId
+                            );
+                            setIsFriendAdded(isFriend);
+                            
+                            // 친구가 아니면 요청 상태를 서버에서 확인
+                            if (!isFriend) {
+                                try {
+                                    // 현재 사용자 ID 가져오기
+                                    let currentUserId = currentUserIdRef.current;
+                                    if (!currentUserId) {
+                                        // 프로필에서 현재 사용자 ID 가져오기
+                                        const myProfileResponse = await fetch(USER_ENDPOINTS.getProfile, {
+                                            method: 'GET',
+                                            headers: {
+                                                'Authorization': `Bearer ${accessToken}`,
+                                                'Content-Type': 'application/json',
+                                            },
+                                        });
+                                        if (myProfileResponse.ok) {
+                                            const myProfileData = await myProfileResponse.json();
+                                            if (myProfileData.resultType === 'SUCCESS' && myProfileData.success) {
+                                                currentUserId = myProfileData.success.userId;
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 서버에서 보낸 친구 요청 알림 확인 (processed=false인 것만)
+                                    const notificationsResponse = await fetch(
+                                        NOTIFICATION_ENDPOINTS.getNotifications({ 
+                                            type: 'friend_request', 
+                                            processed: false 
+                                        }),
+                                        {
+                                            method: 'GET',
+                                            headers: {
+                                                'Authorization': `Bearer ${accessToken}`,
+                                                'Content-Type': 'application/json',
+                                            },
+                                        }
+                                    );
+                                    
+                                    if (notificationsResponse.ok && currentUserId) {
+                                        const notificationsData = await notificationsResponse.json();
+                                        const notifications = notificationsData.resultType === 'SUCCESS' 
+                                            ? (notificationsData.success || [])
+                                            : (Array.isArray(notificationsData) ? notificationsData : []);
+                                        
+                                        // 내가 보낸 친구 요청이 있고 아직 처리되지 않았는지 확인
+                                        // fromUser가 나이고 toUser가 상대방인 요청 확인
+                                        const hasPendingRequest = Array.isArray(notifications) && notifications.some((notif: any) => 
+                                            (notif.fromUser?.id === currentUserId || notif.fromUserId === currentUserId) &&
+                                            (notif.toUser?.id === partnerId || notif.toUserId === partnerId) && 
+                                            !notif.processed
+                                        );
+                                        
+                                        setIsFriendRequestSent(hasPendingRequest);
+                                        
+                                        // 서버에 pending 요청이 없으면 AsyncStorage에서도 제거
+                                        if (!hasPendingRequest) {
+                                            const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                                            if (pendingRequests) {
+                                                const requests = JSON.parse(pendingRequests);
+                                                const updatedRequests = requests.filter((req: any) => 
+                                                    req.userId !== partnerId && req.userName !== userName
+                                                );
+                                                await AsyncStorage.setItem('friend_requests', JSON.stringify(updatedRequests));
+                                            }
+                                        }
+                                    } else {
+                                        // 서버 확인 실패 시 AsyncStorage만 확인
+                                        const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                                        const requests = pendingRequests ? JSON.parse(pendingRequests) : [];
+                                        const hasRequestSent = requests.some((req: any) => 
+                                            req.userName === userName || req.userId === partnerId
+                                        );
+                                        setIsFriendRequestSent(hasRequestSent);
+                                    }
+                                } catch (error) {
+                                    console.error('친구 요청 상태 확인 오류:', error);
+                                    // 에러 발생 시 AsyncStorage만 확인
+                                    const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                                    const requests = pendingRequests ? JSON.parse(pendingRequests) : [];
+                                    const hasRequestSent = requests.some((req: any) => 
+                                        req.userName === userName || req.userId === partnerId
+                                    );
+                                    setIsFriendRequestSent(hasRequestSent);
+                                }
+                            } else {
+                                // 친구가 되었으면 요청 상태는 false
+                                setIsFriendRequestSent(false);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('친구 목록 조회 오류:', error);
+                    }
+                } else {
+                    // 친구 채팅일 때는 항상 친구 상태
+                    setIsFriendAdded(true);
+                    setIsFriendRequestSent(false);
+                }
             }
         } catch (error) {
             console.error('상대방 프로필 조회 오류:', error);
@@ -235,7 +351,8 @@ export default function ChatRoomScreen() {
         Keyboard.dismiss();
         // 프로필 모달 열기
         setIsHeartLiked(false);
-        setIsFriendAdded(true);
+        setIsFriendAdded(isFriendChat); // 친구 채팅이면 true, 랜덤 채팅이면 false로 초기화
+        setIsFriendRequestSent(false); // 초기화
         setShowProfileModal(true);
         
         // partnerId가 있으면 프로필 조회 (랜덤 채팅 또는 친구 채팅)
@@ -324,7 +441,7 @@ export default function ChatRoomScreen() {
                 if (data.resultType === 'SUCCESS' && data.success?.messages) {
                     const loadedMessages: Message[] = data.success.messages.map((msg: any) => ({
                         id: msg.id,
-                        text: msg.text || (msg.imageUrl ? '[이미지]' : ''),
+                        text: msg.text || '',
                         time: new Date(msg.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
                         isMine: msg.fromUserId === currentUserIdRef.current,
                         image: msg.imageUrl || undefined,
@@ -717,7 +834,7 @@ export default function ChatRoomScreen() {
                         if (fromUserIdNum === partnerIdNum) {
                             const newMessage: Message = {
                                 id: messageIdCounter.current++,
-                                text: data.text || (data.imageUrl ? '[이미지]' : ''),
+                                text: data.text || '',
                                 time: new Date(data.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
                                 isMine: false,
                                 image: data.imageUrl || undefined,
@@ -1055,9 +1172,9 @@ export default function ChatRoomScreen() {
     return (
         <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <KeyboardAvoidingView 
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
             {/* 상단 헤더 */}
             <View style={styles.header}>
@@ -1103,7 +1220,7 @@ export default function ChatRoomScreen() {
             <ScrollView 
                 ref={scrollViewRef}
                 style={styles.messagesContainer}
-                contentContainerStyle={styles.messagesContent}
+                contentContainerStyle={[styles.messagesContent, { flexGrow: 1 }]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={true}
             >
@@ -1596,23 +1713,69 @@ export default function ChatRoomScreen() {
                                     />
                                 </TouchableOpacity>
                                 
-                                {/* 친구 추가된 상태 - 채팅과 친구 삭제 버튼 */}
-                                <>
+                                {/* 친구 상태에 따른 버튼 표시 */}
+                                {!isFriendAdded && !isFriendRequestSent ? (
+                                    // 친구 추가 버튼
                                     <TouchableOpacity 
                                         style={{
-                                            backgroundColor: '#f8f9fa',
+                                            backgroundColor: '#4CAF50',
                                             borderRadius: 25,
                                             paddingHorizontal: 20,
                                             paddingVertical: 12,
                                             flex: 1,
-                                            marginRight: 10,
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                         }}
-                                        onPress={() => setShowProfileModal(false)}
+                                        onPress={async () => {
+                                            if (!partnerId) {
+                                                Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+                                                return;
+                                            }
+
+                                            const accessToken = await AsyncStorage.getItem('accessToken');
+                                            if (!accessToken) {
+                                                Alert.alert('로그인 필요', '친구 추가를 하려면 로그인이 필요합니다.');
+                                                return;
+                                            }
+
+                                            try {
+                                                const response = await fetch(FRIEND_ENDPOINTS.request(partnerId), {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${accessToken}`,
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                });
+
+                                                if (response.ok) {
+                                                    // 친구 요청 저장
+                                                    const pendingRequests = await AsyncStorage.getItem('friend_requests');
+                                                    const requests = pendingRequests ? JSON.parse(pendingRequests) : [];
+                                                    const newRequest = {
+                                                        userName: userName,
+                                                        userId: partnerId,
+                                                        timestamp: Date.now()
+                                                    };
+                                                    requests.push(newRequest);
+                                                    await AsyncStorage.setItem('friend_requests', JSON.stringify(requests));
+                                                    
+                                                    setIsFriendRequestSent(true);
+                                                    Alert.alert('성공', '친구 요청이 전송되었습니다.');
+                                                } else {
+                                                    const errorData = await response.json();
+                                                    Alert.alert('오류', errorData.error?.reason || '친구 요청에 실패했습니다.');
+                                                }
+                                            } catch (error) {
+                                                console.error('친구 추가 오류:', error);
+                                                Alert.alert('오류', '친구 요청 중 오류가 발생했습니다.');
+                                            }
+                                        }}
                                     >
-                                        <Ionicons name="chatbubble-outline" size={20} color="#4CAF50" />
+                                        <Ionicons name="person-add" size={20} color="#fff" />
+                                        <Text style={{ color: '#fff', marginLeft: 5, fontWeight: '600' }}>친구 추가</Text>
                                     </TouchableOpacity>
+                                ) : !isFriendAdded && isFriendRequestSent ? (
+                                    // 친구 요청 전송됨 상태
                                     <TouchableOpacity 
                                         style={{
                                             backgroundColor: '#f8f9fa',
@@ -1622,30 +1785,65 @@ export default function ChatRoomScreen() {
                                             flex: 1,
                                             alignItems: 'center',
                                             justifyContent: 'center',
+                                            opacity: 0.6,
                                         }}
-                                        onPress={() => {
-                                            setShowProfileModal(false);
-                                            // 친구 삭제 기능 (실제 구현 시 AsyncStorage에서 제거)
-                                            Alert.alert(
-                                                '친구 삭제',
-                                                `${userName}님을 친구 목록에서 삭제하시겠습니까?`,
-                                                [
-                                                    { text: '취소', style: 'cancel' },
-                                                    { 
-                                                        text: '삭제', 
-                                                        style: 'destructive',
-                                                        onPress: () => {
-                                                            // 실제 친구 삭제 로직 구현 필요
-                                                            Alert.alert('삭제됨', '친구가 삭제되었습니다.');
+                                        disabled={true}
+                                    >
+                                        <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                                        <Text style={{ color: '#4CAF50', marginLeft: 5, fontWeight: '600' }}>친구 요청 전송됨</Text>
+                                    </TouchableOpacity>
+                                ) : (
+                                    // 친구 추가된 상태 - 채팅과 친구 삭제 버튼
+                                    <>
+                                        <TouchableOpacity 
+                                            style={{
+                                                backgroundColor: '#f8f9fa',
+                                                borderRadius: 25,
+                                                paddingHorizontal: 20,
+                                                paddingVertical: 12,
+                                                flex: 1,
+                                                marginRight: 10,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                            }}
+                                            onPress={() => setShowProfileModal(false)}
+                                        >
+                                            <Ionicons name="chatbubble-outline" size={20} color="#4CAF50" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity 
+                                            style={{
+                                                backgroundColor: '#f8f9fa',
+                                                borderRadius: 25,
+                                                paddingHorizontal: 20,
+                                                paddingVertical: 12,
+                                                flex: 1,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                            }}
+                                            onPress={() => {
+                                                setShowProfileModal(false);
+                                                // 친구 삭제 기능 (실제 구현 시 AsyncStorage에서 제거)
+                                                Alert.alert(
+                                                    '친구 삭제',
+                                                    `${userName}님을 친구 목록에서 삭제하시겠습니까?`,
+                                                    [
+                                                        { text: '취소', style: 'cancel' },
+                                                        { 
+                                                            text: '삭제', 
+                                                            style: 'destructive',
+                                                            onPress: () => {
+                                                                // 실제 친구 삭제 로직 구현 필요
+                                                                Alert.alert('삭제됨', '친구가 삭제되었습니다.');
+                                                            }
                                                         }
-                                                    }
-                                                ]
-                                            );
-                                        }}
-                                    >
-                                        <Ionicons name="person-remove" size={20} color="#E53935" />
-                                    </TouchableOpacity>
-                                </>
+                                                    ]
+                                                );
+                                            }}
+                                        >
+                                            <Ionicons name="person-remove" size={20} color="#E53935" />
+                                        </TouchableOpacity>
+                                    </>
+                                )}
                                 </View>
                             </View>
                         )}
